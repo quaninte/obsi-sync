@@ -61,12 +61,14 @@ import { DiscardModal, type DiscardResult } from "./ui/modals/discardModal";
 import { HunkActions } from "./editor/signs/hunkActions";
 import { EditorIntegration } from "./editor/editorIntegration";
 import { ConflictResolver } from "./conflictResolver";
+import { Diagnostics } from "./diagnostics";
 
 export default class ObsidianGit extends Plugin {
     gitManager!: GitManager;
     automaticsManager = new AutomaticsManager(this);
     tools = new Tools(this);
     localStorage = new LocalStorageSettings(this);
+    diagnostics = new Diagnostics(this);
     settings!: ObsidianGitSettings;
     settingsTab?: ObsidianGitSettingsTab;
     statusBar?: StatusBar;
@@ -851,6 +853,13 @@ export default class ObsidianGit extends Plugin {
         amend?: boolean;
     }): Promise<boolean> {
         if (!(await this.isAllInitialized())) return false;
+        const operationId = this.diagnostics.createOperationId("commit");
+        this.diagnostics.record({
+            event: "commit.started",
+            operationId,
+            automatic: fromAuto,
+            onlyStaged,
+        });
         try {
             let hadConflict = this.localStorage.getConflict();
 
@@ -914,6 +923,33 @@ export default class ObsidianGit extends Plugin {
                         }));
                     }
                 }
+            }
+
+            if (
+                !onlyStaged &&
+                !(await this.ensureWorkingTreeIntegrity(operationId))
+            ) {
+                return false;
+            }
+            if (
+                onlyStaged &&
+                this.gitManager instanceof SimpleGit &&
+                !(await this.gitManager.verifyStagedIntegrity()).ok
+            ) {
+                this.diagnostics.record({
+                    event: "integrity.blocked",
+                    operationId,
+                    phase: "staged-files",
+                });
+                this.displayError(
+                    `Commit blocked by staged Git integrity checks (operation ${operationId}).${
+                        this.diagnostics.currentLogPath
+                            ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
+                            : ""
+                    }`,
+                    15000
+                );
+                return false;
             }
 
             if (
@@ -1065,8 +1101,20 @@ export default class ObsidianGit extends Plugin {
             }
             this.app.workspace.trigger("obsi-sync:refresh");
 
+            this.diagnostics.record({
+                event: "commit.completed",
+                operationId,
+                files: [...stagedFiles, ...unstagedFiles].map(
+                    (file) => file.vaultPath
+                ),
+            });
+
             return true;
         } catch (error) {
+            this.diagnostics.recordError(
+                { event: "commit.failed", operationId },
+                error
+            );
             this.displayError(error);
             return false;
         }
@@ -1080,6 +1128,11 @@ export default class ObsidianGit extends Plugin {
         if (!(await this.remotesAreSet())) {
             return false;
         }
+        const operationId = this.diagnostics.createOperationId("push");
+        this.diagnostics.record({
+            event: "push.started",
+            operationId,
+        });
         const hadConflict = this.localStorage.getConflict();
         try {
             if (this.gitManager instanceof SimpleGit)
@@ -1105,6 +1158,8 @@ export default class ObsidianGit extends Plugin {
                 this.displayError(`Cannot push. You have conflicts`);
                 return false;
             }
+            if (!(await this.ensureOutgoingIntegrity(operationId)))
+                return false;
             // Squash local unpushed commits into one before pushing, so frequent
             // local commits don't clutter the remote history. Only unpushed
             // history is rewritten (no force-push). Conflicts are excluded above.
@@ -1132,12 +1187,27 @@ export default class ObsidianGit extends Plugin {
             }
             this.setPluginState({ offlineMode: false });
             this.app.workspace.trigger("obsi-sync:refresh");
+            this.diagnostics.record({
+                event: "push.completed",
+                operationId,
+                outcome: "pushed",
+            });
             return true;
         } catch (e) {
+            this.diagnostics.recordError(
+                { event: "push.failed", operationId },
+                e
+            );
             if (e instanceof NoNetworkError) {
                 this.handleNoNetworkError(e);
             } else {
-                this.displayError(e);
+                this.displayError(
+                    `Push failed (operation ${operationId}). ${String(e)}${
+                        this.diagnostics.currentLogPath
+                            ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
+                            : ""
+                    }`
+                );
             }
             return false;
         }
@@ -1152,6 +1222,12 @@ export default class ObsidianGit extends Plugin {
         if (!(await this.remotesAreSet())) {
             return false;
         }
+        const operationId = this.diagnostics.createOperationId("pull");
+        this.diagnostics.record({
+            event: "pull.started",
+            operationId,
+            syncMethod: this.settings.syncMethod,
+        });
         try {
             this.log("Pulling....");
             const pulledFiles = (await this.gitManager.pull()) || [];
@@ -1167,6 +1243,14 @@ export default class ObsidianGit extends Plugin {
                 }
             }
 
+            this.diagnostics.record({
+                event: "pull.completed",
+                operationId,
+                outcome: pulledFiles.length > 0 ? "pulled" : "up-to-date",
+                fileCount: pulledFiles.length,
+                files: pulledFiles.map((file) => file.vaultPath),
+            });
+
             if (pulledFiles.length > 0) {
                 this.displayMessage(
                     `Pulled ${pulledFiles.length} ${
@@ -1177,10 +1261,83 @@ export default class ObsidianGit extends Plugin {
             }
             return pulledFiles.length;
         } catch (e) {
-            this.displayError(e);
+            this.diagnostics.recordError(
+                {
+                    event: "pull.failed",
+                    operationId,
+                    syncMethod: this.settings.syncMethod,
+                },
+                e
+            );
+            this.displayError(
+                `Pull failed (operation ${operationId}). ${String(e)}${
+                    this.diagnostics.currentLogPath
+                        ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
+                        : ""
+                }`
+            );
 
             return false;
         }
+    }
+
+    private async ensureWorkingTreeIntegrity(
+        operationId: string
+    ): Promise<boolean> {
+        if (!(this.gitManager instanceof SimpleGit)) return true;
+        const result = await this.gitManager.verifyWorkingTreeIntegrity();
+        if (result.ok) return true;
+        this.diagnostics.record({
+            event: "integrity.blocked",
+            operationId,
+            phase: "working-tree",
+            issues: result.issues,
+        });
+        this.displayError(
+            `Operation blocked by Git integrity checks (operation ${operationId}). ${this.formatIntegrityIssues(
+                result.issues
+            )}${
+                this.diagnostics.currentLogPath
+                    ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
+                    : ""
+            }`,
+            15000
+        );
+        return false;
+    }
+
+    private async ensureOutgoingIntegrity(
+        operationId: string
+    ): Promise<boolean> {
+        if (!(this.gitManager instanceof SimpleGit)) return true;
+        const result = await this.gitManager.verifyOutgoingIntegrity();
+        if (result.ok) return true;
+        this.diagnostics.record({
+            event: "integrity.blocked",
+            operationId,
+            phase: "outgoing-history",
+            issues: result.issues,
+        });
+        this.displayError(
+            `Push blocked by Git integrity checks (operation ${operationId}). ${this.formatIntegrityIssues(
+                result.issues
+            )}${
+                this.diagnostics.currentLogPath
+                    ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
+                    : ""
+            }`,
+            15000
+        );
+        return false;
+    }
+
+    private formatIntegrityIssues(
+        issues: { path?: string; detail: string }[]
+    ): string {
+        return issues
+            .slice(0, 5)
+            .map((issue) => `${issue.path ?? "repository"}: ${issue.detail}`)
+            .join("; ");
     }
 
     private async resolveConflicts(conflicted: string[]): Promise<boolean> {

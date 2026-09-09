@@ -13,6 +13,19 @@ export function addCommmands(plugin: ObsidianGit) {
     const app = plugin.app;
 
     plugin.addCommand({
+        id: "open-diagnostic-log",
+        name: "Open diagnostic log",
+        checkCallback: (checking) => {
+            const logPath = plugin.diagnostics.currentLogPath;
+            if (checking) return Platform.isDesktopApp && logPath != undefined;
+            if (!logPath) return false;
+            plugin.diagnostics.record({ event: "diagnostics.opened" });
+            app.openWithDefaultApp(logPath);
+            return true;
+        },
+    });
+
+    plugin.addCommand({
         id: "edit-gitignore",
         name: "Edit .gitignore",
         callback: async () => {

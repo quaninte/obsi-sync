@@ -135,6 +135,21 @@ export interface Status {
     conflicted: string[];
 }
 
+export interface IntegrityIssue {
+    kind:
+        | "conflicted-status"
+        | "conflict-marker"
+        | "invalid-json"
+        | "diff-check";
+    path?: string;
+    detail: string;
+}
+
+export interface IntegrityResult {
+    ok: boolean;
+    issues: IntegrityIssue[];
+}
+
 export interface GitTimestamp {
     /**
      * The number of unix seconds since epoch time (UTC).

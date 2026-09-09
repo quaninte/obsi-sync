@@ -23,6 +23,8 @@ import type {
     DiffFile,
     FileStatusResult,
     GitProgress,
+    IntegrityIssue,
+    IntegrityResult,
     LogEntry,
     Status,
 } from "../types";
@@ -414,6 +416,162 @@ export class SimpleGit extends GitManager {
         };
     }
 
+    async verifyWorkingTreeIntegrity(): Promise<IntegrityResult> {
+        const status = await this.status();
+        const issues: IntegrityIssue[] = status.conflicted.map((file) => ({
+            kind: "conflicted-status",
+            path: file,
+            detail: "Git still reports this path as conflicted.",
+        }));
+        const paths = new Set(status.all.map((file) => file.path));
+
+        issues.push(...(await this.scanWorkingTreePaths(paths)));
+        issues.push(...(await this.diffCheck(["diff", "--check"])));
+        return { ok: issues.length === 0, issues };
+    }
+
+    async verifyStagedIntegrity(): Promise<IntegrityResult> {
+        const issues = await this.diffCheck(["diff", "--cached", "--check"]);
+        const output = await this.git.raw(["diff", "--cached", "--name-only"]);
+        const paths = new Set(
+            output
+                .split(/\r?\n/)
+                .map((file) => file.trim())
+                .filter((file) => file.length > 0)
+        );
+        issues.push(...(await this.scanWorkingTreePaths(paths)));
+        return { ok: issues.length === 0, issues };
+    }
+
+    async verifyOutgoingIntegrity(): Promise<IntegrityResult> {
+        const branch = await this.branchInfo();
+        if (!branch.current || !branch.tracking)
+            return { ok: true, issues: [] };
+
+        const issues = await this.diffCheck([
+            "diff",
+            "--check",
+            `${branch.tracking}..${branch.current}`,
+        ]);
+        const output = await this.git.raw([
+            "diff",
+            "--name-only",
+            `${branch.tracking}..${branch.current}`,
+        ]);
+        for (const file of output
+            .split(/\r?\n/)
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)) {
+            if (
+                file === ".obsidian/community-plugins.json" ||
+                file === ".obsidian/plugins/obsi-sync/data.json"
+            ) {
+                try {
+                    JSON.parse(
+                        await this.git.raw([
+                            "show",
+                            `${branch.current}:${file}`,
+                        ])
+                    );
+                } catch (error) {
+                    issues.push({
+                        kind: "invalid-json",
+                        path: file,
+                        detail: String(error),
+                    });
+                }
+            }
+            try {
+                const content = await this.git.raw([
+                    "show",
+                    `${branch.current}:${file}`,
+                ]);
+                if (this.hasConflictMarker(content)) {
+                    issues.push({
+                        kind: "conflict-marker",
+                        path: file,
+                        detail: "Outgoing HEAD content contains a Git conflict marker.",
+                    });
+                }
+            } catch {
+                // Deleted paths cannot contain a marker in the outgoing tree.
+            }
+        }
+        return { ok: issues.length === 0, issues };
+    }
+
+    private async scanWorkingTreePaths(
+        paths: Set<string>
+    ): Promise<IntegrityIssue[]> {
+        const issues: IntegrityIssue[] = [];
+        for (const file of paths) {
+            const absolutePath = path.resolve(this.absoluteRepoPath, file);
+            if (
+                absolutePath !== this.absoluteRepoPath &&
+                !absolutePath.startsWith(`${this.absoluteRepoPath}${path.sep}`)
+            ) {
+                continue;
+            }
+            try {
+                const content = await fsPromises.readFile(absolutePath, "utf8");
+                if (this.hasConflictMarker(content)) {
+                    issues.push({
+                        kind: "conflict-marker",
+                        path: file,
+                        detail: "Working tree content contains a Git conflict marker.",
+                    });
+                }
+                if (
+                    file === ".obsidian/community-plugins.json" ||
+                    file === ".obsidian/plugins/obsi-sync/data.json"
+                ) {
+                    try {
+                        JSON.parse(content);
+                    } catch (error) {
+                        issues.push({
+                            kind: "invalid-json",
+                            path: file,
+                            detail: String(error),
+                        });
+                    }
+                }
+            } catch {
+                // Deleted paths have no working-tree content to inspect.
+            }
+        }
+        return issues;
+    }
+
+    private async diffCheck(args: string[]): Promise<IntegrityIssue[]> {
+        try {
+            const output = await this.git.raw([
+                ...args,
+                "--",
+                ".",
+                ":(exclude).obsidian/plugins/obsi-sync/main.js",
+            ]);
+            return output.trim().length > 0
+                ? [
+                      {
+                          kind: "diff-check",
+                          detail: output.trim().slice(0, 2000),
+                      },
+                  ]
+                : [];
+        } catch (error) {
+            return [
+                {
+                    kind: "diff-check",
+                    detail: String(error).slice(0, 2000),
+                },
+            ];
+        }
+    }
+
+    private hasConflictMarker(content: string): boolean {
+        return /^(<<<<<<<|=======|>>>>>>>)(?:\s.*)?$/m.test(content);
+    }
+
     async submoduleAwareHeadRevisonInContainingDirectory(
         filepath: string
     ): Promise<string> {
@@ -558,6 +716,18 @@ export class SimpleGit extends GitManager {
                 }
             }
             await this.git.add("-A");
+
+            const integrity = await this.verifyStagedIntegrity();
+            if (!integrity.ok) {
+                throw new Error(
+                    `Commit blocked by integrity checks: ${integrity.issues
+                        .map(
+                            (issue) =>
+                                `${issue.path ?? "repository"}: ${issue.detail}`
+                        )
+                        .join("; ")}`
+                );
+            }
 
             const res = await this.git.commit(
                 await this.formatCommitMessage(message)
@@ -714,10 +884,10 @@ export class SimpleGit extends GitManager {
                                     await this.git.rebase(args);
                             }
                         } catch (err) {
-                            this.plugin.displayError(
+                            this.plugin.log(
                                 `Pull failed (${this.plugin.settings.syncMethod}): ${errorToString(err)}`
                             );
-                            return;
+                            throw err;
                         }
                     } else if (this.plugin.settings.syncMethod === "reset") {
                         try {
@@ -728,9 +898,10 @@ export class SimpleGit extends GitManager {
                             ]);
                             await this.git.reset([]);
                         } catch (err) {
-                            this.plugin.displayError(
+                            this.plugin.log(
                                 `Sync failed (${this.plugin.settings.syncMethod}): ${errorToString(err)}`
                             );
+                            throw err;
                         }
                     }
                     this.app.workspace.trigger("obsi-sync:head-change");

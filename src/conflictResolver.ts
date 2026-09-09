@@ -34,11 +34,27 @@ export class ConflictResolver {
         }
 
         const manager = this.plugin.gitManager;
+        const operationId =
+            this.plugin.diagnostics?.createOperationId("conflict");
+        this.plugin.diagnostics?.record({
+            event: "resolver.started",
+            operationId,
+            files: conflicted,
+            cli: settings.cli,
+            model: settings.model.trim(),
+        });
         let remaining = [...conflicted];
         for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             if (remaining.length === 0) return true;
 
             const before = await manager.git.status();
+            this.plugin.diagnostics?.record({
+                event: "resolver.attempt.started",
+                operationId,
+                attempt,
+                files: remaining,
+                conflicted: before.conflicted,
+            });
             const allowedPaths = new Set(remaining);
             const prompt = this.buildPrompt(remaining, attempt);
             const result = await this.runCli(
@@ -48,23 +64,45 @@ export class ConflictResolver {
                 manager.absoluteRepoPath,
                 settings.timeoutSeconds
             );
+            this.plugin.diagnostics?.record({
+                event: "resolver.cli.completed",
+                operationId,
+                attempt,
+                exitCode: result.code,
+                timedOut: result.timedOut,
+                stdout: this.safeOutput(result.stdout),
+                stderr: this.safeOutput(result.stderr),
+            });
 
             if (result.timedOut) {
+                this.plugin.diagnostics?.record({
+                    event: "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: "timeout",
+                });
                 this.plugin.displayError(
-                    `Automatic conflict resolution timed out after ${settings.timeoutSeconds} seconds.`
+                    `Automatic conflict resolution timed out after ${settings.timeoutSeconds} seconds (operation ${operationId ?? "unknown"}).`
                 );
                 return false;
             }
             if (result.code !== 0) {
                 const detail = (result.stderr || result.stdout).trim();
+                this.plugin.diagnostics?.record({
+                    event: "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: "cli-exit",
+                    detail: this.safeOutput(detail),
+                });
                 this.plugin.displayError(
-                    `Automatic conflict resolution failed (${settings.cli}, exit ${result.code})${detail ? `: ${detail.slice(0, 1000)}` : "."}`
+                    `Automatic conflict resolution failed (${settings.cli}, exit ${result.code}, operation ${operationId ?? "unknown"})${detail ? `: ${this.safeOutput(detail)}` : "."}`
                 );
                 return false;
             }
             if (result.stdout.trim()) {
                 this.plugin.log(
-                    `Automatic conflict resolver output:\n${result.stdout.trim().slice(-4000)}`
+                    `Automatic conflict resolver output:\n${this.safeOutput(result.stdout)}`
                 );
             }
 
@@ -77,8 +115,15 @@ export class ConflictResolver {
                         !before.files.some((item) => item.path === file)
                 );
             if (unexpected.length > 0) {
+                this.plugin.diagnostics?.record({
+                    event: "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: "unexpected-files",
+                    files: unexpected,
+                });
                 this.plugin.displayError(
-                    `Automatic conflict resolution changed unexpected files: ${unexpected.join(", ")}`
+                    `Automatic conflict resolution changed unexpected files (operation ${operationId ?? "unknown"}): ${unexpected.join(", ")}`
                 );
                 return false;
             }
@@ -88,8 +133,15 @@ export class ConflictResolver {
                 remaining
             );
             if (unresolvedMarkers.length > 0) {
+                this.plugin.diagnostics?.record({
+                    event: "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: "conflict-markers",
+                    files: unresolvedMarkers,
+                });
                 this.plugin.displayError(
-                    `Automatic conflict resolution left conflict markers in: ${unresolvedMarkers.join(", ")}`
+                    `Automatic conflict resolution left conflict markers in (operation ${operationId ?? "unknown"}): ${unresolvedMarkers.join(", ")}`
                 );
                 return false;
             }
@@ -101,15 +153,31 @@ export class ConflictResolver {
             await manager.git.add(remaining);
             const staged = await manager.git.status();
             if (staged.conflicted.length > 0) {
+                this.plugin.diagnostics?.record({
+                    event: "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: "git-conflict-remains",
+                    files: staged.conflicted,
+                });
                 this.plugin.displayError(
-                    `Git still reports unresolved conflicts in: ${staged.conflicted.join(", ")}`
+                    `Git still reports unresolved conflicts (operation ${operationId ?? "unknown"}) in: ${staged.conflicted.join(", ")}`
                 );
                 return false;
             }
 
             try {
                 await this.continueGitOperation(manager, settings.cli);
-                return (await manager.git.status()).conflicted.length === 0;
+                const finalStatus = await manager.git.status();
+                const success = finalStatus.conflicted.length === 0;
+                this.plugin.diagnostics?.record({
+                    event: success ? "resolver.completed" : "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: success ? undefined : "git-conflict-remains",
+                    conflicted: finalStatus.conflicted,
+                });
+                return success;
             } catch (error) {
                 const status = await manager.git.status();
                 if (
@@ -117,7 +185,16 @@ export class ConflictResolver {
                     attempt === MAX_ATTEMPTS
                 ) {
                     this.plugin.displayError(
-                        `Git could not continue after automatic conflict resolution: ${String(error)}`
+                        `Git could not continue after automatic conflict resolution (operation ${operationId ?? "unknown"}): ${String(error)}`
+                    );
+                    this.plugin.diagnostics?.recordError(
+                        {
+                            event: "resolver.failed",
+                            operationId,
+                            attempt,
+                            reason: "git-continue",
+                        },
+                        error
                     );
                     return false;
                 }
@@ -125,6 +202,16 @@ export class ConflictResolver {
             }
         }
         return false;
+    }
+
+    private safeOutput(output: string): string {
+        return output
+            .replace(
+                /(token|password|secret|authorization)=?\s*[^\s]+/gi,
+                "$1=[REDACTED]"
+            )
+            .trim()
+            .slice(-4000);
     }
 
     private buildPrompt(files: string[], attempt: number): string {
