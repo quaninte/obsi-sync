@@ -181,7 +181,7 @@ export const hunksState: StateField<HunksData | undefined> = StateField.define<
                 hunksData.changeDesc.newLength === transaction.changes.length;
             console.assert(
                 changeDescsAreComposable,
-                "Git: Hunk changes belong to different document histories."
+                "Obsi Sync: Hunk changes belong to different document histories."
             );
             if (!changeDescsAreComposable) {
                 // Do not let an invariant violation break editing in production.

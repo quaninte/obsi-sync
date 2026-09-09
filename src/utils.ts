@@ -72,7 +72,7 @@ export function mayTriggerFileMenu(
         } else {
             const fileMenu = new Menu();
             app.workspace.trigger(
-                "obsidian-git:menu",
+                "obsi-sync:menu",
                 fileMenu,
                 filePath,
                 source,

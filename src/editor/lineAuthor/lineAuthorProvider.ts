@@ -33,7 +33,7 @@ export class LineAuthorProvider {
         try {
             await this.trackChangedHelper(file);
         } catch (error) {
-            console.warn("Git: Error in trackChanged.", error);
+            console.warn("Obsi Sync: Error in trackChanged.", error);
             throw error;
         }
     }
@@ -43,7 +43,7 @@ export class LineAuthorProvider {
 
         if (file.path === undefined) {
             console.warn(
-                "Git: Attempted to track change of undefined filepath. Unforeseen situation."
+                "Obsi Sync: Attempted to track change of undefined filepath. Unforeseen situation."
             );
             return;
         }

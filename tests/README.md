@@ -1,6 +1,6 @@
-# Obsidian Git Tests
+# Obsi Sync Tests
 
-This directory contains the automated test setup for Obsidian Git.
+This directory contains the automated test setup for Obsi Sync.
 
 The current strategy is to keep most tests outside a real Obsidian instance.
 Tests run in Node with Vitest, use a small local `obsidian` stub, and use real

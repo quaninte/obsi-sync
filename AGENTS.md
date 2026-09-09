@@ -1,6 +1,6 @@
 ## Project overview
 
-This repository contains the `obsidian-git` Obsidian community plugin. It
+This repository contains the private `obsi-sync` Obsidian plugin fork. It
 bundles TypeScript and Svelte source into the root-level `main.js` loaded by
 Obsidian, with `manifest.json` and `styles.css` as the other release
 artifacts. The plugin manages Git repositories inside an Obsidian vault,

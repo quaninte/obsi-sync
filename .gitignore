@@ -1,3 +1,6 @@
+# Agents
+.agents/plans/drafts
+
 # Intellij
 *.iml
 .idea
@@ -9,6 +12,7 @@ yarn.lock
 
 # build
 *.js.map
+coverage/
 
 .prettierignore
 /data.json

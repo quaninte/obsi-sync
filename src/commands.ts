@@ -51,7 +51,7 @@ export function addCommmands(plugin: ObsidianGit) {
 
             // Is not needed for the first open, but allows to refresh the view
             // per hotkey even if already opened
-            app.workspace.trigger("obsidian-git:refresh");
+            app.workspace.trigger("obsi-sync:refresh");
         },
     });
     plugin.addCommand({
@@ -76,7 +76,7 @@ export function addCommmands(plugin: ObsidianGit) {
 
             // Is not needed for the first open, but allows to refresh the view
             // per hotkey even if already opened
-            app.workspace.trigger("obsidian-git:refresh");
+            app.workspace.trigger("obsi-sync:refresh");
         },
     });
 

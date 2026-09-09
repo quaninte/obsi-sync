@@ -64,7 +64,10 @@ export class LineAuthoringFeature {
 
             console.log(this.plg.manifest.name + ": Enabled line authoring.");
         } catch (e) {
-            console.warn("Git: Error while loading line authoring feature.", e);
+            console.warn(
+                "Obsi Sync: Error while loading line authoring feature.",
+                e
+            );
             this.deactivateFeature();
         }
     }
@@ -162,7 +165,7 @@ export class LineAuthoringFeature {
     private handleWorkspaceLeaf = (leaf: WorkspaceLeaf | null) => {
         if (!this.lineAuthorInfoProvider) {
             console.warn(
-                "Git: undefined lineAuthorInfoProvider. Unexpected situation."
+                "Obsi Sync: undefined lineAuthorInfoProvider. Unexpected situation."
             );
             return;
         }
@@ -216,7 +219,7 @@ export class LineAuthoringFeature {
     }
 
     private createHeadChangeEvent(): EventRef {
-        return this.plg.app.workspace.on("obsidian-git:head-change", () => {
+        return this.plg.app.workspace.on("obsi-sync:head-change", () => {
             this.refreshLineAuthorViews();
         });
     }

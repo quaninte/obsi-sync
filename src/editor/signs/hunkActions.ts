@@ -83,7 +83,7 @@ export class HunkActions {
             "\n";
         await this.gitManager.applyPatch(patch);
 
-        this.plugin.app.workspace.trigger("obsidian-git:refresh");
+        this.plugin.app.workspace.trigger("obsi-sync:refresh");
     }
 
     goToHunk(direction: "first" | "last" | "next" | "prev"): void {

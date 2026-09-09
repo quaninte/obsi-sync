@@ -49,7 +49,7 @@
             .stageAll({ dir: path })
             .catch((e) => plugin.displayError(e))
             .finally(() => {
-                view.app.workspace.trigger("obsidian-git:refresh");
+                view.app.workspace.trigger("obsi-sync:refresh");
             });
     }
     function unstage(event: MouseEvent, path: string) {
@@ -58,7 +58,7 @@
             .unstageAll({ dir: path })
             .catch((e) => plugin.displayError(e))
             .finally(() => {
-                view.app.workspace.trigger("obsidian-git:refresh");
+                view.app.workspace.trigger("obsi-sync:refresh");
             });
     }
     function discard(event: MouseEvent, item: TreeItem) {

@@ -60,6 +60,7 @@ import {
 import { DiscardModal, type DiscardResult } from "./ui/modals/discardModal";
 import { HunkActions } from "./editor/signs/hunkActions";
 import { EditorIntegration } from "./editor/editorIntegration";
+import { ConflictResolver } from "./conflictResolver";
 
 export default class ObsidianGit extends Plugin {
     gitManager!: GitManager;
@@ -88,6 +89,7 @@ export default class ObsidianGit extends Plugin {
     intervalsToClear: number[] = [];
     editorIntegration: EditorIntegration = new EditorIntegration(this);
     hunkActions = new HunkActions(this);
+    conflictResolver = new ConflictResolver(this);
 
     /**
      * Debouncer for the refresh of the git status for the source control view after file changes.
@@ -100,7 +102,7 @@ export default class ObsidianGit extends Plugin {
     }
 
     async updateCachedStatus(): Promise<Status> {
-        this.app.workspace.trigger("obsidian-git:loading-status");
+        this.app.workspace.trigger("obsi-sync:loading-status");
         this.cachedStatus = await this.gitManager.status();
         if (this.cachedStatus.conflicted.length > 0) {
             this.localStorage.setConflict(true);
@@ -111,7 +113,7 @@ export default class ObsidianGit extends Plugin {
         }
 
         this.app.workspace.trigger(
-            "obsidian-git:status-changed",
+            "obsi-sync:status-changed",
             this.cachedStatus
         );
         return this.cachedStatus;
@@ -135,7 +137,7 @@ export default class ObsidianGit extends Plugin {
             await this.updateCachedStatus().catch((e) => this.displayError(e));
         }
 
-        this.app.workspace.trigger("obsidian-git:refreshed");
+        this.app.workspace.trigger("obsi-sync:refreshed");
 
         // We don't put a line authoring refresh here, as it would force a re-loading
         // of the line authoring feature - which would lead to a jumpy editor-view in the
@@ -221,12 +223,12 @@ export default class ObsidianGit extends Plugin {
      */
     registerStuff(): void {
         this.registerEvent(
-            this.app.workspace.on("obsidian-git:refresh", () => {
+            this.app.workspace.on("obsi-sync:refresh", () => {
                 this.refresh().catch((e) => this.displayError(e));
             })
         );
         this.registerEvent(
-            this.app.workspace.on("obsidian-git:head-change", () => {
+            this.app.workspace.on("obsi-sync:head-change", () => {
                 this.refreshUpdatedHead();
             })
         );
@@ -238,8 +240,8 @@ export default class ObsidianGit extends Plugin {
         );
 
         this.registerEvent(
-            this.app.workspace.on("obsidian-git:menu", (menu, path, source) => {
-                this.handleFileMenu(menu, path, source, "obsidian-git:menu");
+            this.app.workspace.on("obsi-sync:menu", (menu, path, source) => {
+                this.handleFileMenu(menu, path, source, "obsi-sync:menu");
             })
         );
 
@@ -352,14 +354,14 @@ export default class ObsidianGit extends Plugin {
             this.gitManager.getRelativeVaultPath(".gitignore"),
             "\n" + gitignoreRule
         );
-        this.app.workspace.trigger("obsidian-git:refresh");
+        this.app.workspace.trigger("obsi-sync:refresh");
     }
 
     handleFileMenu(
         menu: Menu,
         file: TAbstractFile | string,
         source: string,
-        type: "file-manu" | "obsidian-git:menu"
+        type: "file-manu" | "obsi-sync:menu"
     ): void {
         if (!this.gitReady) return;
         if (!this.settings.showFileMenu) return;
@@ -373,7 +375,7 @@ export default class ObsidianGit extends Plugin {
 
         if (source == "file-explorer-context-menu") {
             menu.addItem((item) => {
-                item.setTitle(`Git: Stage`)
+                item.setTitle(`Obsi Sync: Stage`)
                     .setIcon("plus-circle")
                     .setSection("action")
                     .onClick((_) => {
@@ -387,15 +389,13 @@ export default class ObsidianGit extends Plugin {
                                         true
                                     ),
                                 });
-                                this.app.workspace.trigger(
-                                    "obsidian-git:refresh"
-                                );
+                                this.app.workspace.trigger("obsi-sync:refresh");
                             }
                         });
                     });
             });
             menu.addItem((item) => {
-                item.setTitle(`Git: Unstage`)
+                item.setTitle(`Obsi Sync: Unstage`)
                     .setIcon("minus-circle")
                     .setSection("action")
                     .onClick((_) => {
@@ -410,15 +410,13 @@ export default class ObsidianGit extends Plugin {
                                     ),
                                 });
 
-                                this.app.workspace.trigger(
-                                    "obsidian-git:refresh"
-                                );
+                                this.app.workspace.trigger("obsi-sync:refresh");
                             }
                         });
                     });
             });
             menu.addItem((item) => {
-                item.setTitle(`Git: Add to .gitignore`)
+                item.setTitle(`Obsi Sync: Add to .gitignore`)
                     .setIcon("file-x")
                     .setSection("action")
                     .onClick((_) => {
@@ -432,7 +430,7 @@ export default class ObsidianGit extends Plugin {
 
         if (source == "git-source-control") {
             menu.addItem((item) => {
-                item.setTitle(`Git: Add to .gitignore`)
+                item.setTitle(`Obsi Sync: Add to .gitignore`)
                     .setIcon("file-x")
                     .setSection("action")
                     .onClick((_) => {
@@ -444,7 +442,7 @@ export default class ObsidianGit extends Plugin {
             });
             const gitManager = this.app.vault.adapter;
             if (
-                type === "obsidian-git:menu" &&
+                type === "obsi-sync:menu" &&
                 gitManager instanceof FileSystemAdapter
             ) {
                 menu.addItem((item) => {
@@ -603,9 +601,9 @@ export default class ObsidianGit extends Plugin {
 
                     this.editorIntegration.onReady();
 
-                    this.app.workspace.trigger("obsidian-git:refresh");
+                    this.app.workspace.trigger("obsi-sync:refresh");
                     /// Among other things, this notifies the history view that git is ready
-                    this.app.workspace.trigger("obsidian-git:head-change");
+                    this.app.workspace.trigger("obsi-sync:head-change");
 
                     if (
                         !fromReload &&
@@ -785,7 +783,7 @@ export default class ObsidianGit extends Plugin {
             }
         }
 
-        this.app.workspace.trigger("obsidian-git:refresh");
+        this.app.workspace.trigger("obsi-sync:refresh");
     }
 
     async commitAndSync({
@@ -805,7 +803,7 @@ export default class ObsidianGit extends Plugin {
             this.settings.syncMethod == "reset" &&
             this.settings.pullBeforePush
         ) {
-            await this.pull();
+            if ((await this.pull()) === false) return;
         }
 
         const commitSuccessful = await this.commit({
@@ -822,7 +820,7 @@ export default class ObsidianGit extends Plugin {
             this.settings.syncMethod != "reset" &&
             this.settings.pullBeforePush
         ) {
-            await this.pull();
+            if ((await this.pull()) === false) return;
         }
 
         if (!this.settings.disablePush) {
@@ -1065,7 +1063,7 @@ export default class ObsidianGit extends Plugin {
             } else {
                 this.displayMessage("No changes to commit");
             }
-            this.app.workspace.trigger("obsidian-git:refresh");
+            this.app.workspace.trigger("obsi-sync:refresh");
 
             return true;
         } catch (error) {
@@ -1133,7 +1131,7 @@ export default class ObsidianGit extends Plugin {
                 }
             }
             this.setPluginState({ offlineMode: false });
-            this.app.workspace.trigger("obsidian-git:refresh");
+            this.app.workspace.trigger("obsi-sync:refresh");
             return true;
         } catch (e) {
             if (e instanceof NoNetworkError) {
@@ -1159,6 +1157,16 @@ export default class ObsidianGit extends Plugin {
             const pulledFiles = (await this.gitManager.pull()) || [];
             this.setPluginState({ offlineMode: false });
 
+            if (this.gitManager instanceof SimpleGit) {
+                const status = await this.updateCachedStatus();
+                if (status.conflicted.length > 0) {
+                    const resolved = await this.resolveConflicts(
+                        status.conflicted
+                    );
+                    if (!resolved) return false;
+                }
+            }
+
             if (pulledFiles.length > 0) {
                 this.displayMessage(
                     `Pulled ${pulledFiles.length} ${
@@ -1175,6 +1183,24 @@ export default class ObsidianGit extends Plugin {
         }
     }
 
+    private async resolveConflicts(conflicted: string[]): Promise<boolean> {
+        if (
+            this.gitManager instanceof SimpleGit &&
+            this.settings.conflictResolution.enabled
+        ) {
+            const resolved = await this.conflictResolver.resolve(conflicted);
+            if (resolved) {
+                await this.updateCachedStatus();
+                this.displayMessage("Conflicts resolved automatically");
+                this.app.workspace.trigger("obsi-sync:head-change");
+                return true;
+            }
+        }
+
+        await this.handleConflict(conflicted);
+        return false;
+    }
+
     async fetch(): Promise<void> {
         if (!(await this.remotesAreSet())) {
             return;
@@ -1184,7 +1210,7 @@ export default class ObsidianGit extends Plugin {
 
             this.displayMessage(`Fetched from remote`);
             this.setPluginState({ offlineMode: false });
-            this.app.workspace.trigger("obsidian-git:refresh");
+            this.app.workspace.trigger("obsi-sync:refresh");
         } catch (error) {
             this.displayError(error);
         }
@@ -1210,7 +1236,7 @@ export default class ObsidianGit extends Plugin {
 
         await this.gitManager.stage(file.path, true);
 
-        this.app.workspace.trigger("obsidian-git:refresh");
+        this.app.workspace.trigger("obsi-sync:refresh");
 
         return true;
     }
@@ -1220,7 +1246,7 @@ export default class ObsidianGit extends Plugin {
 
         await this.gitManager.unstage(file.path, true);
 
-        this.app.workspace.trigger("obsidian-git:refresh");
+        this.app.workspace.trigger("obsi-sync:refresh");
 
         return true;
     }
@@ -1237,7 +1263,7 @@ export default class ObsidianGit extends Plugin {
         if (selectedBranch != undefined) {
             await this.gitManager.checkout(selectedBranch);
             this.displayMessage(`Switched to ${selectedBranch}`);
-            this.app.workspace.trigger("obsidian-git:refresh");
+            this.app.workspace.trigger("obsi-sync:refresh");
             await this.branchBar?.display();
             return selectedBranch;
         }
@@ -1411,7 +1437,7 @@ export default class ObsidianGit extends Plugin {
             default:
                 assertNever(result);
         }
-        this.app.workspace.trigger("obsidian-git:refresh");
+        this.app.workspace.trigger("obsi-sync:refresh");
         return result;
     }
 
@@ -1421,7 +1447,7 @@ export default class ObsidianGit extends Plugin {
         if (conflicted !== undefined) {
             lines = [
                 "# Conflicts",
-                "Please resolve them and commit them using the commands `Git: Commit all changes` followed by `Git: Push`",
+                "Please resolve them and commit them using the commands `Obsi Sync: Commit all changes` followed by `Obsi Sync: Push`",
                 "(This file will automatically be deleted before commit)",
                 "[[#Additional Instructions]] available below file list",
                 "",
@@ -1594,7 +1620,7 @@ I strongly recommend to use "Source mode" for viewing the conflicted files. For 
     handleNoNetworkError(_: NoNetworkError): void {
         if (!this.state.offlineMode) {
             this.displayError(
-                "Git: Going into offline mode. Future network errors will no longer be displayed.",
+                "Obsi Sync: Going into offline mode. Future network errors will no longer be displayed.",
                 2000
             );
         } else {

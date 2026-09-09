@@ -56,7 +56,7 @@ const cases: RoundTripCase[] = [
 ];
 
 function createTempDirectory(): string {
-    return mkdtempSync(path.join(tmpdir(), "obsidian-git-test-"));
+    return mkdtempSync(path.join(tmpdir(), "obsi-sync-test-"));
 }
 
 function gitDiffNoIndex(oldFile: string, newFile: string): string {

@@ -22,7 +22,7 @@ export default class DiffView extends ItemView {
         this.navigation = true;
         this.contentEl.addClass("git-diff");
         this.gitRefreshRef = this.app.workspace.on(
-            "obsidian-git:status-changed",
+            "obsi-sync:status-changed",
             () => {
                 this.refresh().catch(console.error);
             }
@@ -121,7 +121,7 @@ export default class DiffView extends ItemView {
                     this.contentEl.append(diffEl!);
                 } else {
                     const div = this.contentEl.createDiv({
-                        cls: "obsidian-git-center",
+                        cls: "obsi-sync-center",
                     });
                     div.createSpan({
                         text: "⚠️",

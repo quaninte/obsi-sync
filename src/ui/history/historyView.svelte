@@ -29,7 +29,7 @@
     onMount(() => {
         view.registerEvent(
             view.app.workspace.on(
-                "obsidian-git:head-change",
+                "obsi-sync:head-change",
                 () => void refresh().catch(console.error)
             )
         );

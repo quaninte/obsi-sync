@@ -89,7 +89,7 @@ describe("SimpleGit.commit", () => {
             [{ operation: GitOperation.idle }],
         ]);
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
-            "obsidian-git:head-change"
+            "obsi-sync:head-change"
         );
     });
 
@@ -143,7 +143,7 @@ describe("SimpleGit.commitAll", () => {
             [{ operation: GitOperation.idle }],
         ]);
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
-            "obsidian-git:head-change"
+            "obsi-sync:head-change"
         );
     });
 });
@@ -174,7 +174,7 @@ describe("SimpleGit.pull", () => {
             [{ operation: GitOperation.idle }],
         ]);
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
-            "obsidian-git:head-change"
+            "obsi-sync:head-change"
         );
     });
 
@@ -228,7 +228,7 @@ describe("SimpleGit.pull", () => {
         expect(await repo.headMessage()).toBe("remote commit");
         expect(await repo.show("HEAD:remote.md")).toBe("remote");
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
-            "obsidian-git:head-change"
+            "obsi-sync:head-change"
         );
     });
 
@@ -490,7 +490,7 @@ describe("SimpleGit.squashAllUnpushedCommits", () => {
             [{ operation: GitOperation.idle }],
         ]);
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
-            "obsidian-git:head-change"
+            "obsi-sync:head-change"
         );
     });
 

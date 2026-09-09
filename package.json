@@ -1,7 +1,7 @@
 {
-    "name": "obsidian-git",
+    "name": "obsi-sync",
     "version": "2.39.0",
-    "description": "Integrate Git version control with automatic backup and other advanced features in Obsidian.md",
+    "description": "Private Obsidian Git sync with optional automatic AI conflict resolution",
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs dev",
@@ -17,7 +17,7 @@
         "all": "pnpm run tsc && pnpm run svelte && pnpm run format && pnpm run lint && pnpm run test"
     },
     "keywords": [],
-    "author": "Vinzent03",
+    "author": "Quan Inte",
     "license": "MIT",
     "type": "module",
     "standard-version": {

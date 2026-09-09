@@ -71,7 +71,7 @@
             .unstage(change.path, false)
             .catch((e) => view.plugin.displayError(e))
             .finally(() => {
-                view.app.workspace.trigger("obsidian-git:refresh");
+                view.app.workspace.trigger("obsi-sync:refresh");
             });
     }
 </script>

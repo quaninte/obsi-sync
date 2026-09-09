@@ -44,13 +44,13 @@
     onMount(() => {
         view.registerEvent(
             view.app.workspace.on(
-                "obsidian-git:loading-status",
+                "obsi-sync:loading-status",
                 () => (loading = true)
             )
         );
         view.registerEvent(
             view.app.workspace.on(
-                "obsidian-git:status-changed",
+                "obsi-sync:status-changed",
                 () => void refresh().catch(console.error)
             )
         );
@@ -175,7 +175,7 @@
     }
 
     function triggerRefresh() {
-        view.app.workspace.trigger("obsidian-git:refresh");
+        view.app.workspace.trigger("obsi-sync:refresh");
     }
 
     function stageAll(event: MouseEvent) {

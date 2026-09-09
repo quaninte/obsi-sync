@@ -14,7 +14,7 @@ export class StatusBar {
     private unPushedCommits?: number;
     private progress?: GitProgress;
     public lastMessageTimestamp: number | null = null;
-    private base = "obsidian-git-statusbar-";
+    private base = "obsi-sync-statusbar-";
     private iconEl!: HTMLElement;
     private conflictEl!: HTMLElement;
     private pausedEl!: HTMLElement;
@@ -27,7 +27,7 @@ export class StatusBar {
         this.statusBarEl.setAttribute("data-tooltip-position", "top");
 
         plugin.registerEvent(
-            plugin.app.workspace.on("obsidian-git:refreshed", () => {
+            plugin.app.workspace.on("obsi-sync:refreshed", () => {
                 this.refreshCommitTimestamp().catch(console.error);
             })
         );
@@ -35,7 +35,7 @@ export class StatusBar {
 
     public displayMessage(message: string, timeout: number) {
         this.messages.push({
-            message: `Git: ${message.slice(0, 100)}`,
+            message: `Obsi Sync: ${message.slice(0, 100)}`,
             timeout: timeout,
         });
         this.display();

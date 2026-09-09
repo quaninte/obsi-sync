@@ -56,7 +56,7 @@ export class SimpleGit extends GitManager {
                         this.plugin.settings.basePath
                     );
                 } else if (!ignoreError) {
-                    new Notice("ObsidianGit: Base path does not exist");
+                    new Notice("Obsi Sync: Base path does not exist");
                 }
             }
             this.absoluteRepoPath = basePath;
@@ -137,7 +137,7 @@ export class SimpleGit extends GitManager {
                 vaultBasePath,
                 this.app.vault.configDir,
                 "plugins",
-                "obsidian-git"
+                "obsi-sync"
             );
             const askPassPath = path.join(
                 absolutePluginConfigPath,
@@ -239,17 +239,17 @@ export class SimpleGit extends GitManager {
             vaultPath,
             this.app.vault.configDir,
             "plugins",
-            "obsidian-git"
+            "obsi-sync"
         );
     }
 
     private get relPluginConfigPath(): string {
-        return path.join(this.app.vault.configDir, "plugins", "obsidian-git");
+        return path.join(this.app.vault.configDir, "plugins", "obsi-sync");
     }
     async askpass(): Promise<void> {
         const adapter = this.app.vault.adapter as FileSystemAdapter;
         const relPluginConfigDir =
-            this.app.vault.configDir + "/plugins/obsidian-git/";
+            this.app.vault.configDir + "/plugins/obsi-sync/";
 
         await this.addAskPassScriptToExclude();
 
@@ -351,7 +351,7 @@ export class SimpleGit extends GitManager {
             const vaultRelativeAskPassScriptFile = path.join(
                 this.app.vault.configDir,
                 "plugins",
-                "obsidian-git",
+                "obsi-sync",
                 ASK_PASS_SCRIPT_FILE
             );
             const repoRelativeAskPassScriptFile = this.getRelativeRepoPath(
@@ -423,9 +423,7 @@ export class SimpleGit extends GitManager {
         const args = ["-C", containingDirectory, "rev-parse", "HEAD"];
 
         const result = this.git.raw(args);
-        result.catch((err) =>
-            console.warn("obsidian-git: rev-parse error:", err)
-        );
+        result.catch((err) => console.warn("obsi-sync: rev-parse error:", err));
         return (await result).trim();
     }
 
@@ -564,7 +562,7 @@ export class SimpleGit extends GitManager {
             const res = await this.git.commit(
                 await this.formatCommitMessage(message)
             );
-            this.app.workspace.trigger("obsidian-git:head-change");
+            this.app.workspace.trigger("obsi-sync:head-change");
             return res.summary.changes;
         });
     }
@@ -583,7 +581,7 @@ export class SimpleGit extends GitManager {
                     amend ? ["--amend"] : []
                 )
             ).summary.changes;
-            this.app.workspace.trigger("obsidian-git:head-change");
+            this.app.workspace.trigger("obsi-sync:head-change");
             return res;
         });
     }
@@ -735,7 +733,7 @@ export class SimpleGit extends GitManager {
                             );
                         }
                     }
-                    this.app.workspace.trigger("obsidian-git:head-change");
+                    this.app.workspace.trigger("obsi-sync:head-change");
 
                     const afterMergeCommit = await this.git.revparse([
                         branchInfo.current,
@@ -876,7 +874,7 @@ export class SimpleGit extends GitManager {
             // changes stay staged and are re-committed as a single commit.
             await this.git.reset(["--soft", trackingBranch]);
             await this.git.raw(["commit", "-C", oldHead]);
-            this.app.workspace.trigger("obsidian-git:head-change");
+            this.app.workspace.trigger("obsi-sync:head-change");
         });
     }
 

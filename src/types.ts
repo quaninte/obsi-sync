@@ -85,6 +85,16 @@ export interface ObsidianGitSettings {
         showSigns: boolean;
         statusBar: "disabled" | "colored" | "monochrome";
     };
+    conflictResolution: ConflictResolutionSettings;
+}
+
+export type ConflictResolutionCli = "codex" | "opencode";
+
+export interface ConflictResolutionSettings {
+    enabled: boolean;
+    cli: ConflictResolutionCli;
+    model: string;
+    timeoutSeconds: number;
 }
 
 /**
@@ -95,7 +105,12 @@ export function mergeSettingsByPriority(
     high: ObsidianGitSettings
 ): ObsidianGitSettings {
     const lineAuthor = Object.assign({}, low.lineAuthor, high.lineAuthor);
-    return Object.assign({}, low, high, { lineAuthor });
+    const conflictResolution = Object.assign(
+        {},
+        low.conflictResolution,
+        high.conflictResolution
+    );
+    return Object.assign({}, low, high, { lineAuthor, conflictResolution });
 }
 
 export type SyncMethod = "rebase" | "merge" | "reset";
@@ -420,7 +435,7 @@ declare module "obsidian" {
          * Emitted when some git action has been completed and plugin has been refreshed
          */
         on(
-            name: "obsidian-git:refreshed",
+            name: "obsi-sync:refreshed",
             callback: () => void,
             ctx?: unknown
         ): EventRef;
@@ -428,7 +443,7 @@ declare module "obsidian" {
          * Emitted when some git action has been completed and the plugin should refresh
          */
         on(
-            name: "obsidian-git:refresh",
+            name: "obsi-sync:refresh",
             callback: () => void,
             ctx?: unknown
         ): EventRef;
@@ -436,7 +451,7 @@ declare module "obsidian" {
          * Emitted when the plugin is currently loading a new cached status.
          */
         on(
-            name: "obsidian-git:loading-status",
+            name: "obsi-sync:loading-status",
             callback: () => void,
             ctx?: unknown
         ): EventRef;
@@ -444,7 +459,7 @@ declare module "obsidian" {
          * Emitted when the HEAD changed.
          */
         on(
-            name: "obsidian-git:head-change",
+            name: "obsi-sync:head-change",
             callback: () => void,
             ctx?: unknown
         ): EventRef;
@@ -452,13 +467,13 @@ declare module "obsidian" {
          * Emitted when a new cached status is available.
          */
         on(
-            name: "obsidian-git:status-changed",
+            name: "obsi-sync:status-changed",
             callback: (status: Status) => void,
             ctx?: unknown
         ): EventRef;
 
         on(
-            name: "obsidian-git:menu",
+            name: "obsi-sync:menu",
             callback: (
                 menu: Menu,
                 path: string,
@@ -468,13 +483,13 @@ declare module "obsidian" {
             ctx?: unknown
         ): EventRef;
         trigger(name: string, ...data: unknown[]): void;
-        trigger(name: "obsidian-git:refreshed"): void;
-        trigger(name: "obsidian-git:refresh"): void;
-        trigger(name: "obsidian-git:loading-status"): void;
-        trigger(name: "obsidian-git:head-change"): void;
-        trigger(name: "obsidian-git:status-changed", status: Status): void;
+        trigger(name: "obsi-sync:refreshed"): void;
+        trigger(name: "obsi-sync:refresh"): void;
+        trigger(name: "obsi-sync:loading-status"): void;
+        trigger(name: "obsi-sync:head-change"): void;
+        trigger(name: "obsi-sync:status-changed", status: Status): void;
         trigger(
-            name: "obsidian-git:menu",
+            name: "obsi-sync:menu",
             menu: Menu,
             path: string,
             source: string,

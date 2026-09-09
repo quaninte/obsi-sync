@@ -30,7 +30,7 @@ export type TestRepo = {
     cleanup(): void;
 };
 
-export function createTempDirectory(prefix = "obsidian-git-test-"): string {
+export function createTempDirectory(prefix = "obsi-sync-test-"): string {
     return mkdtempSync(path.join(tmpdir(), prefix));
 }
 
@@ -106,7 +106,7 @@ function createTestRepoFixture(args: {
 }
 
 export async function createRepoWithOrigin(): Promise<TestRepo> {
-    const dir = createTempDirectory("obsidian-git-simple-git-test-");
+    const dir = createTempDirectory("obsi-sync-simple-git-test-");
     const remotePath = path.join(dir, "remote.git");
     const repoPath = path.join(dir, "worktree");
 

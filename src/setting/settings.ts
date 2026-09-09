@@ -75,6 +75,111 @@ export class ObsidianGitSettingsTab extends PluginSettingTab {
         let setting: Setting;
         if (gitReady) {
             new Setting(containerEl).setName("Automatic").setHeading();
+
+            if (Platform.isDesktopApp) {
+                new Setting(containerEl)
+                    .setName("Automatic conflict resolution")
+                    .setDesc(
+                        "When a pull conflicts, let a local Codex or OpenCode CLI edit the conflicted files and continue Git automatically. The selected provider may receive vault content."
+                    )
+                    .setHeading();
+
+                new Setting(containerEl)
+                    .setName("Enable automatic conflict resolution")
+                    .setDesc(
+                        "Use only if you accept fully automated model edits and provider costs."
+                    )
+                    .addToggle((toggle) =>
+                        toggle
+                            .setValue(
+                                plugin.settings.conflictResolution.enabled
+                            )
+                            .onChange(async (value) => {
+                                plugin.settings.conflictResolution.enabled =
+                                    value;
+                                await plugin.saveSettings();
+                            })
+                    );
+
+                const conflictCli = new Setting(containerEl)
+                    .setName("Conflict resolver CLI")
+                    .setDesc(
+                        "Choose the installed local CLI to run on conflicts."
+                    )
+                    .addDropdown((dropdown) =>
+                        dropdown
+                            .addOptions({
+                                codex: "Codex CLI",
+                                opencode: "OpenCode",
+                            })
+                            .setValue(plugin.settings.conflictResolution.cli)
+                            .onChange(async (value) => {
+                                plugin.settings.conflictResolution.cli =
+                                    value as "codex" | "opencode";
+                                await plugin.saveSettings();
+                            })
+                    );
+
+                const conflictModel = new Setting(containerEl)
+                    .setName("Conflict resolver model")
+                    .setDesc(
+                        "Codex model name, or OpenCode provider/model (for example openai/gpt-5)."
+                    )
+                    .addText((text) => {
+                        text.setPlaceholder("provider/model");
+                        text.setValue(plugin.settings.conflictResolution.model);
+                        text.onChange(async (value) => {
+                            plugin.settings.conflictResolution.model =
+                                value.trim();
+                            await plugin.saveSettings();
+                        });
+                    });
+
+                const conflictTimeout = new Setting(containerEl)
+                    .setName("Conflict resolver timeout (seconds)")
+                    .setDesc("Stops a stuck CLI process. Minimum 30 seconds.")
+                    .addText((text) => {
+                        text.inputEl.type = "number";
+                        text.setValue(
+                            String(
+                                plugin.settings.conflictResolution
+                                    .timeoutSeconds
+                            )
+                        );
+                        text.onChange(async (value) => {
+                            const parsed = Number(value);
+                            plugin.settings.conflictResolution.timeoutSeconds =
+                                Number.isFinite(parsed)
+                                    ? Math.max(
+                                          30,
+                                          Math.min(1800, Math.round(parsed))
+                                      )
+                                    : DEFAULT_SETTINGS.conflictResolution
+                                          .timeoutSeconds;
+                            text.setValue(
+                                String(
+                                    plugin.settings.conflictResolution
+                                        .timeoutSeconds
+                                )
+                            );
+                            await plugin.saveSettings();
+                        });
+                    });
+
+                this.mayDisableSetting(
+                    conflictCli,
+                    !plugin.settings.conflictResolution.enabled
+                );
+                this.mayDisableSetting(
+                    conflictModel,
+                    !plugin.settings.conflictResolution.enabled
+                );
+                this.mayDisableSetting(
+                    conflictTimeout,
+                    !plugin.settings.conflictResolution.enabled
+                );
+            }
+
             new Setting(containerEl)
                 .setName("Split timers for automatic commit and sync")
                 .setDesc(
@@ -1047,7 +1152,7 @@ export class ObsidianGitSettingsTab extends PluginSettingTab {
             );
             const keys = containerEl.createDiv();
             keys.setAttr("align", "center");
-            keys.addClass("obsidian-git-shortcuts");
+            keys.addClass("obsi-sync-shortcuts");
             if (Platform.isMacOS === true) {
                 keys.createEl("kbd", { text: "CMD (⌘) + OPTION (⌥) + I" });
             } else {
@@ -1059,7 +1164,7 @@ export class ObsidianGitSettingsTab extends PluginSettingTab {
     mayDisableSetting(setting: Setting, disable: boolean) {
         if (disable) {
             setting.setDisabled(disable);
-            setting.setClass("obsidian-git-disabled");
+            setting.setClass("obsi-sync-disabled");
         }
     }
 

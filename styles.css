@@ -35,23 +35,23 @@
     display: inline-block;
 }
 
-.obsidian-git-center {
+.obsi-sync-center {
     margin: auto;
     text-align: center;
     width: 50%;
 }
 
-.obsidian-git-textarea {
+.obsi-sync-textarea {
     display: block;
     margin-left: auto;
     margin-right: auto;
 }
 
-.obsidian-git-disabled {
+.obsi-sync-disabled {
     opacity: 0.5;
 }
 
-.obsidian-git-center-button {
+.obsi-sync-center-button {
     display: block;
     margin: 20px auto;
 }

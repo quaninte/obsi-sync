@@ -31,7 +31,7 @@ Git is a version control system. It allows you to keep track of changes to your 
 You build your history by batching multiple changes into commits. These can then be reverted or checked out. You can view the difference between version of a note via the [Version History Diff](obsidian://show-plugin?id=obsidian-version-history-diff) plugin.
 Git itself only manages a local repository. It becomes really handy in conjunction with an online remote repository. You can push and pull your commits to/from a remote repository to share or backup your vault. The most popular provider is [GitHub](https://github.com).
 
-Git is primarily used by developers and thus the command line is sometimes needed. Obsidian-Git is a plugin for Obsidian that allows you to use Git from within Obsidian without always having to use the command line or leaving Obsidian.
+Git is primarily used by developers and thus the command line is sometimes needed. Obsi Sync is a plugin for Obsidian that allows you to use Git from within Obsidian without always having to use the command line or leaving Obsidian.
 
 ## Terminology and concepts
 

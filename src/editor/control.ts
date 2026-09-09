@@ -31,7 +31,7 @@ export class FileSubscriber {
     public notifyLineAuthoring(id: LineAuthoringId, la: LineAuthoring) {
         if (this.view === undefined) {
             console.warn(
-                `Git: View is not defined for editor cache key. Unforeseen situation. id: ${id}`
+                `Obsi Sync: View is not defined for editor cache key. Unforeseen situation. id: ${id}`
             );
             return;
         }
@@ -45,7 +45,7 @@ export class FileSubscriber {
     public notifyGitCompare(data: GitCompareResult) {
         if (this.view === undefined) {
             console.warn(
-                `Git: View is not defined for editor cache key. Unforeseen situation. id: `
+                `Obsi Sync: View is not defined for editor cache key. Unforeseen situation. id: `
             );
             //TODO removed it above in the error message
             return;

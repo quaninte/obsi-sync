@@ -26,12 +26,12 @@ export class IgnoreModal extends Modal {
 
         const text = div.createEl("textarea", {
             text: this.content,
-            cls: ["obsidian-git-textarea"],
+            cls: ["obsi-sync-textarea"],
             attr: { rows: 10, cols: 30, wrap: "off" },
         });
 
         div.createEl("button", {
-            cls: ["mod-cta", "obsidian-git-center-button"],
+            cls: ["mod-cta", "obsi-sync-center-button"],
             text: "Save",
         }).addEventListener("click", () => {
             this.resolve!(text.value);

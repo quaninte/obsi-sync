@@ -61,7 +61,7 @@ export class SignsFeature {
                 );
             }
         } catch (e) {
-            console.warn("Git: Error while loading signs feature.", e);
+            console.warn("Obsi Sync: Error while loading signs feature.", e);
             this.deactivateFeature();
         }
     }
@@ -150,7 +150,9 @@ export class SignsFeature {
 
     private handleWorkspaceLeaf = (leaf: WorkspaceLeaf | null) => {
         if (!this.signsProvider) {
-            console.warn("Git: undefined signsProvider. Unexpected situation.");
+            console.warn(
+                "Obsi Sync: undefined signsProvider. Unexpected situation."
+            );
             return;
         }
         const obsView = leaf?.view;
@@ -190,7 +192,7 @@ export class SignsFeature {
     }
 
     private createPluginRefreshedEvent(): EventRef {
-        return this.plg.app.workspace.on("obsidian-git:refreshed", () => {
+        return this.plg.app.workspace.on("obsi-sync:refreshed", () => {
             this.refresh();
         });
     }
