@@ -214,6 +214,56 @@ describe("ConflictResolver", () => {
         ]);
     });
 
+    it("repairs staged integrity failures and lets the host restage the file", async () => {
+        spawnMock.mockImplementation(() => {
+            writeFileSync(path.join(repoPath, "note.md"), "resolved\n");
+            return childProcess({ stdout: "integrity repaired" });
+        });
+        const { resolver, manager, add, raw } = makeResolver(
+            [status("note.md", []), status("note.md", [])],
+            repoPath
+        );
+        raw.mockResolvedValueOnce("note.md\n");
+        vi.spyOn(manager, "verifyStagedIntegrity").mockResolvedValue({
+            ok: true,
+            issues: [],
+        });
+
+        await expect(
+            resolver.repairIntegrity(
+                [
+                    {
+                        kind: "diff-check",
+                        path: "note.md",
+                        detail: "note.md:1: trailing whitespace.",
+                    },
+                ],
+                "staged-files"
+            )
+        ).resolves.toBe(true);
+
+        expect(spawnMock).toHaveBeenCalledWith(
+            "codex",
+            expect.arrayContaining([
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--cd",
+                repoPath,
+            ]),
+            expect.objectContaining({ cwd: repoPath, shell: false })
+        );
+        const spawnCall = spawnMock.mock.calls[0] as [
+            string,
+            string[],
+            { env: NodeJS.ProcessEnv },
+        ];
+        expect(spawnCall[2].env.OBSI_SYNC_INTEGRITY_REPAIR).toBe("1");
+        expect(add).toHaveBeenCalledWith(["note.md"]);
+        expect(raw).not.toHaveBeenCalledWith(
+            expect.arrayContaining(["commit"])
+        );
+    });
+
     it("rejects missing configuration, disabled resolution, and mobile backends", async () => {
         const disabled = makeResolver([], repoPath, { enabled: false });
         await expect(disabled.resolver.resolve(["note.md"])).resolves.toBe(

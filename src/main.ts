@@ -931,25 +931,19 @@ export default class ObsidianGit extends Plugin {
             ) {
                 return false;
             }
-            if (
-                onlyStaged &&
-                this.gitManager instanceof SimpleGit &&
-                !(await this.gitManager.verifyStagedIntegrity()).ok
-            ) {
-                this.diagnostics.record({
-                    event: "integrity.blocked",
-                    operationId,
-                    phase: "staged-files",
-                });
-                this.displayError(
-                    `Commit blocked by staged Git integrity checks (operation ${operationId}).${
-                        this.diagnostics.currentLogPath
-                            ? ` Diagnostics: ${this.diagnostics.currentLogPath}`
-                            : ""
-                    }`,
-                    15000
-                );
-                return false;
+            if (onlyStaged && this.gitManager instanceof SimpleGit) {
+                const stagedIntegrity =
+                    await this.gitManager.verifyStagedIntegrity();
+                if (
+                    !stagedIntegrity.ok &&
+                    !(await this.repairIntegrity(
+                        stagedIntegrity,
+                        operationId,
+                        "staged-files"
+                    ))
+                ) {
+                    return false;
+                }
             }
 
             if (
@@ -1287,6 +1281,9 @@ export default class ObsidianGit extends Plugin {
         if (!(this.gitManager instanceof SimpleGit)) return true;
         const result = await this.gitManager.verifyWorkingTreeIntegrity();
         if (result.ok) return true;
+        if (await this.repairIntegrity(result, operationId, "working-tree")) {
+            return true;
+        }
         this.diagnostics.record({
             event: "integrity.blocked",
             operationId,
@@ -1303,6 +1300,41 @@ export default class ObsidianGit extends Plugin {
             }`,
             15000
         );
+        return false;
+    }
+
+    private async repairIntegrity(
+        result: import("./types").IntegrityResult,
+        operationId: string,
+        phase: "working-tree" | "staged-files"
+    ): Promise<boolean> {
+        const repaired = await this.conflictResolver.repairIntegrity(
+            result.issues,
+            phase
+        );
+        if (!repaired) return false;
+
+        const verification =
+            phase === "staged-files"
+                ? await (this.gitManager as SimpleGit).verifyStagedIntegrity()
+                : await (
+                      this.gitManager as SimpleGit
+                  ).verifyWorkingTreeIntegrity();
+        if (verification.ok) {
+            this.diagnostics.record({
+                event: "integrity.repaired",
+                operationId,
+                phase,
+                issues: result.issues,
+            });
+            return true;
+        }
+        this.diagnostics.record({
+            event: "integrity.blocked",
+            operationId,
+            phase,
+            issues: verification.issues,
+        });
         return false;
     }
 

@@ -85,13 +85,13 @@ Automatic routines can commit-and-sync, commit only, push, pull on a timer, and 
 
 ## Automatic AI conflict resolution
 
-This is an opt-in desktop feature. When enabled and a native Git merge or rebase conflicts, Obsi Sync runs the selected local CLI in the repository, asks it to edit only the conflicted files, checks the result, stages those paths, continues Git, and then resumes the original push if the operation succeeds.
+This is an opt-in desktop feature. When enabled and a native Git merge or rebase conflicts, or a safe working-tree/staged integrity check blocks a commit, Obsi Sync runs the selected local CLI in the repository, asks it to edit only the affected files, checks the result, and resumes the original operation if it succeeds.
 
 ### Configure it
 
 Under **Settings → Obsi Sync → Automatic conflict resolution**:
 
-- **Enable automatic conflict resolution:** turns the feature on. It is off by default.
+- **Enable automatic conflict resolution:** turns conflict resolution and safe integrity repair on. It is off by default.
 - **Conflict resolver CLI:** choose `Codex CLI` or `OpenCode`.
 - **Conflict resolver model:** enter a Codex model name, or an OpenCode model in `provider/model` form.
 - **Conflict resolver timeout:** maximum time for one CLI invocation, from 30 to 1800 seconds.
@@ -108,13 +108,13 @@ codex --version
 opencode --version
 ```
 
-The plugin invokes Codex non-interactively with approval prompts bypassed so the workflow can finish unattended, and invokes OpenCode with its non-interactive `run --auto` mode. The configured model therefore has command execution in the repository; enable this only for a trusted vault and trusted model/provider. The model may read the repository and edit the listed conflicted files. It is instructed not to reset, clean, stash, checkout, abort, commit, push, or edit `.git`.
+The plugin invokes Codex non-interactively with approval prompts bypassed so the workflow can finish unattended, and invokes OpenCode with its non-interactive `run --auto` mode. The configured model therefore has command execution in the repository; enable this only for a trusted vault and trusted model/provider. The model may read the repository and edit the listed affected files. It is instructed not to reset, clean, stash, checkout, abort, commit, push, or edit `.git`.
 
 ### Privacy and safety
 
 Enabling this feature allows the selected model/provider to process conflicted vault content. This may incur provider charges and may send private notes outside the machine. Keep it disabled for vaults whose content must not leave the machine.
 
-The plugin still verifies the repository after the CLI exits. If the CLI fails, times out, edits unexpected files, leaves conflict markers, or Git cannot continue, Obsi Sync blocks the push and writes the normal conflict instructions for manual recovery. Automatic attempts are bounded; the plugin does not loop indefinitely or reset user work.
+The plugin still verifies the repository after the CLI exits. If the CLI fails, times out, edits unexpected files, leaves conflict markers, or Git cannot continue, Obsi Sync blocks the operation and writes the normal conflict instructions for manual recovery. Outgoing-history integrity failures remain blocked because repairing committed history would require a history rewrite. Automatic attempts are bounded; the plugin does not loop indefinitely or reset user work.
 
 ### Recovery after a failed attempt
 

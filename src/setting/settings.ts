@@ -80,14 +80,14 @@ export class ObsidianGitSettingsTab extends PluginSettingTab {
                 new Setting(containerEl)
                     .setName("Automatic conflict resolution")
                     .setDesc(
-                        "When a pull conflicts, let a local Codex or OpenCode CLI edit the conflicted files and continue Git automatically. The selected provider may receive vault content."
+                        "When a pull conflicts or a Git integrity check blocks a commit, let a local Codex or OpenCode CLI make a bounded repair and continue automatically. The selected provider may receive vault content."
                     )
                     .setHeading();
 
                 new Setting(containerEl)
                     .setName("Enable automatic conflict resolution")
                     .setDesc(
-                        "Use only if you accept fully automated model edits and provider costs."
+                        "Also enables automatic repair of safe working-tree and staged integrity failures. Use only if you accept fully automated model edits and provider costs."
                     )
                     .addToggle((toggle) =>
                         toggle

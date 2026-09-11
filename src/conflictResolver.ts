@@ -3,7 +3,11 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { Platform } from "obsidian";
 import type ObsiSync from "./main";
-import type { ConflictResolutionCli } from "./types";
+import type {
+    ConflictResolutionCli,
+    IntegrityIssue,
+    IntegrityResult,
+} from "./types";
 import { SimpleGit } from "./gitManager/simpleGit";
 
 const MAX_ATTEMPTS = 3;
@@ -17,6 +21,174 @@ type ProcessResult = {
 
 export class ConflictResolver {
     constructor(private readonly plugin: ObsiSync) {}
+
+    async repairIntegrity(
+        issues: IntegrityIssue[],
+        phase: "working-tree" | "staged-files"
+    ): Promise<boolean> {
+        const settings = this.plugin.settings.conflictResolution;
+        if (
+            !settings.enabled ||
+            !(this.plugin.gitManager instanceof SimpleGit)
+        ) {
+            return false;
+        }
+        if (!settings.model.trim()) {
+            this.plugin.displayError(
+                "Automatic integrity repair is enabled, but no model is configured."
+            );
+            return false;
+        }
+
+        const manager = this.plugin.gitManager;
+        const operationId =
+            this.plugin.diagnostics?.createOperationId("integrity");
+        const before = await manager.git.status();
+        const stagedPaths =
+            phase === "staged-files"
+                ? (await manager.git.raw(["diff", "--cached", "--name-only"]))
+                      .split(/\r?\n/)
+                      .map((file) => file.trim())
+                      .filter((file) => file.length > 0)
+                : [];
+        const candidatePaths =
+            phase === "staged-files"
+                ? stagedPaths
+                : before.files.map((file) => file.path);
+        const issuePaths = issues
+            .map((issue) => issue.path)
+            .filter((file): file is string => Boolean(file));
+        const files = [
+            ...new Set(issuePaths.length ? issuePaths : candidatePaths),
+        ];
+        const allowedPaths = files;
+
+        if (files.length === 0) {
+            this.plugin.displayError(
+                `Automatic integrity repair could not identify affected files (operation ${operationId ?? "unknown"}).`
+            );
+            return false;
+        }
+
+        this.plugin.diagnostics?.record({
+            event: "integrity.repair.started",
+            operationId,
+            phase,
+            files,
+            cli: settings.cli,
+            model: settings.model.trim(),
+        });
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            const prompt = this.buildIntegrityPrompt(
+                issues,
+                files,
+                phase,
+                attempt
+            );
+            const result = await this.runCli(
+                settings.cli,
+                settings.model.trim(),
+                prompt,
+                manager.absoluteRepoPath,
+                settings.timeoutSeconds,
+                "integrity"
+            );
+            this.plugin.diagnostics?.record({
+                event: "integrity.repair.cli.completed",
+                operationId,
+                phase,
+                attempt,
+                exitCode: result.code,
+                timedOut: result.timedOut,
+                stdout: this.safeOutput(result.stdout),
+                stderr: this.safeOutput(result.stderr),
+            });
+
+            if (result.timedOut || result.code !== 0) {
+                const detail = this.safeOutput(
+                    (result.stderr || result.stdout).trim()
+                );
+                this.plugin.diagnostics?.record({
+                    event: "integrity.repair.failed",
+                    operationId,
+                    phase,
+                    attempt,
+                    reason: result.timedOut ? "timeout" : "cli-exit",
+                    detail,
+                });
+                this.plugin.displayError(
+                    result.timedOut
+                        ? `Automatic integrity repair timed out after ${settings.timeoutSeconds} seconds (operation ${operationId ?? "unknown"}).`
+                        : `Automatic integrity repair failed (${settings.cli}, exit ${result.code}, operation ${operationId ?? "unknown"})${detail ? `: ${detail}` : "."}`
+                );
+                return false;
+            }
+
+            const after = await manager.git.status();
+            const beforeSignatures = new Map(
+                before.files.map((file) => [
+                    file.path,
+                    `${file.index}${file.working_dir}`,
+                ])
+            );
+            const unexpected = after.files
+                .filter((file) => !allowedPaths.includes(file.path))
+                .filter(
+                    (file) =>
+                        beforeSignatures.get(file.path) !==
+                        `${file.index}${file.working_dir}`
+                )
+                .map((file) => file.path);
+            if (unexpected.length > 0) {
+                this.plugin.diagnostics?.record({
+                    event: "integrity.repair.failed",
+                    operationId,
+                    phase,
+                    attempt,
+                    reason: "unexpected-files",
+                    files: unexpected,
+                });
+                this.plugin.displayError(
+                    `Automatic integrity repair changed unexpected files (operation ${operationId ?? "unknown"}): ${unexpected.join(", ")}`
+                );
+                return false;
+            }
+
+            if (phase === "staged-files") {
+                await manager.git.add(allowedPaths);
+            }
+
+            const verification: IntegrityResult =
+                phase === "staged-files"
+                    ? await manager.verifyStagedIntegrity()
+                    : await manager.verifyWorkingTreeIntegrity();
+            if (verification.ok) {
+                this.plugin.diagnostics?.record({
+                    event: "integrity.repair.completed",
+                    operationId,
+                    phase,
+                    attempt,
+                    files,
+                });
+                return true;
+            }
+
+            issues = verification.issues;
+            this.plugin.diagnostics?.record({
+                event: "integrity.repair.retry",
+                operationId,
+                phase,
+                attempt,
+                issues: verification.issues,
+            });
+        }
+
+        this.plugin.displayError(
+            `Automatic integrity repair did not clear the checks (operation ${operationId ?? "unknown"}).`
+        );
+        return false;
+    }
 
     async resolve(conflicted: string[]): Promise<boolean> {
         const settings = this.plugin.settings.conflictResolution;
@@ -226,6 +398,31 @@ export class ConflictResolver {
         ].join("\n\n");
     }
 
+    private buildIntegrityPrompt(
+        issues: IntegrityIssue[],
+        files: string[],
+        phase: "working-tree" | "staged-files",
+        attempt: number
+    ): string {
+        return [
+            "You are repairing a Git integrity-check failure in an Obsidian vault.",
+            `This is automatic pass ${attempt} of ${MAX_ATTEMPTS}.`,
+            `The blocked operation is ${phase}.`,
+            "Edit only the listed files and make the smallest safe repair that preserves their intended content.",
+            "Typical repairs include removing accidental trailing whitespace, resolving conflict markers, or restoring valid JSON syntax.",
+            "Do not reset, clean, stash, checkout, abort, commit, push, or edit .git.",
+            "Do not create, delete, or modify any file outside the listed files.",
+            `Affected files:\n${files.map((file) => `- ${file}`).join("\n")}`,
+            `Integrity findings:\n${issues
+                .map(
+                    (issue) =>
+                        `- ${issue.path ?? "repository"}: ${issue.detail}`
+                )
+                .join("\n")}`,
+            "When finished, leave the repaired files saved in the worktree. The host plugin will verify them and stage them when needed.",
+        ].join("\n\n");
+    }
+
     private async continueGitOperation(
         manager: SimpleGit,
         cli: ConflictResolutionCli
@@ -274,7 +471,8 @@ export class ConflictResolver {
         model: string,
         prompt: string,
         cwd: string,
-        timeoutSeconds: number
+        timeoutSeconds: number,
+        operation: "conflict" | "integrity" = "conflict"
     ): Promise<ProcessResult> {
         const executable = Platform.isWin ? `${cli}.cmd` : cli;
         const args =
@@ -295,7 +493,12 @@ export class ConflictResolver {
             try {
                 child = spawn(executable, args, {
                     cwd,
-                    env: { ...process.env, OBSI_SYNC_CONFLICT_RESOLUTION: "1" },
+                    env: {
+                        ...process.env,
+                        ...(operation === "conflict"
+                            ? { OBSI_SYNC_CONFLICT_RESOLUTION: "1" }
+                            : { OBSI_SYNC_INTEGRITY_REPAIR: "1" }),
+                    },
                     stdio: ["ignore", "pipe", "pipe"],
                     shell: false,
                 });
