@@ -409,7 +409,7 @@ export class ConflictResolver {
             `This is automatic pass ${attempt} of ${MAX_ATTEMPTS}.`,
             `The blocked operation is ${phase}.`,
             "Edit only the listed files and make the smallest safe repair that preserves their intended content.",
-            "Typical repairs include removing accidental trailing whitespace, resolving conflict markers, or restoring valid JSON syntax.",
+            "Typical repairs include resolving conflict markers, restoring valid JSON syntax, or addressing other blocking Git integrity errors. Trailing whitespace is allowed and must be preserved.",
             "Do not reset, clean, stash, checkout, abort, commit, push, or edit .git.",
             "Do not create, delete, or modify any file outside the listed files.",
             `Affected files:\n${files.map((file) => `- ${file}`).join("\n")}`,

@@ -85,7 +85,7 @@ Automatic routines can commit-and-sync, commit only, push, pull on a timer, and 
 
 ## Automatic AI conflict resolution
 
-This is an opt-in desktop feature. When enabled and a native Git merge or rebase conflicts, or a safe working-tree/staged integrity check blocks a commit, Obsi Sync runs the selected local CLI in the repository, asks it to edit only the affected files, checks the result, and resumes the original operation if it succeeds.
+This is an opt-in desktop feature. When enabled and a native Git merge or rebase conflicts, or a safe working-tree/staged integrity check blocks a commit, Obsi Sync runs the selected local CLI in the repository, asks it to edit only the affected files, checks the result, and resumes the original operation if it succeeds. Trailing whitespace is allowed and does not block commits or sync.
 
 ### Configure it
 

@@ -1,4 +1,4 @@
-import { writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import path from "path";
 import simpleGit, {
     type SimpleGit as SimpleGitClient,
@@ -145,6 +145,23 @@ describe("SimpleGit.commitAll", () => {
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
             "obsi-sync:head-change"
         );
+    });
+
+    it("commits files with trailing whitespace", async () => {
+        const repo = withCleanup(await createRepoWithOrigin());
+        repo.write("note.md", "base\nline with trailing whitespace  \n");
+        const plugin = createFakePlugin();
+        const manager = createManager(repo.repoPath, repo.git, plugin);
+
+        const changes = await manager.commitAll({
+            message: "keep trailing whitespace",
+        });
+
+        expect(changes).toBe(1);
+        expect(readFileSync(path.join(repo.repoPath, "note.md"), "utf8")).toBe(
+            "base\nline with trailing whitespace  \n"
+        );
+        expect(await repo.statusPorcelain()).toBe("");
     });
 });
 

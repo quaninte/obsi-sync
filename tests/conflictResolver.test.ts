@@ -235,7 +235,7 @@ describe("ConflictResolver", () => {
                     {
                         kind: "diff-check",
                         path: "note.md",
-                        detail: "note.md:1: trailing whitespace.",
+                        detail: "note.md:1: space before tab in indent.",
                     },
                 ],
                 "staged-files"

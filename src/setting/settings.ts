@@ -80,7 +80,7 @@ export class ObsidianGitSettingsTab extends PluginSettingTab {
                 new Setting(containerEl)
                     .setName("Automatic conflict resolution")
                     .setDesc(
-                        "When a pull conflicts or a Git integrity check blocks a commit, let a local Codex or OpenCode CLI make a bounded repair and continue automatically. The selected provider may receive vault content."
+                        "When a pull conflicts or a non-whitespace Git integrity check blocks a commit, let a local Codex or OpenCode CLI make a bounded repair and continue automatically. Trailing whitespace is allowed. The selected provider may receive vault content."
                     )
                     .setHeading();
 
