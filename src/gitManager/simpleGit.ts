@@ -544,21 +544,17 @@ export class SimpleGit extends GitManager {
 
     private async diffCheck(args: string[]): Promise<IntegrityIssue[]> {
         try {
-            const output = await this.git.raw([
+            await this.git.raw([
                 ...args,
                 "--",
                 ".",
                 ":(exclude).obsidian/plugins/obsi-sync/main.js",
             ]);
-            const blockingOutput = this.filterDiffCheckOutput(output);
-            return blockingOutput.length > 0
-                ? [
-                      {
-                          kind: "diff-check",
-                          detail: blockingOutput.slice(0, 2000),
-                      },
-                  ]
-                : [];
+            // Git reports whitespace diagnostics through `diff --check`.
+            // Whitespace is valid vault content and must never block commit or
+            // sync; structural checks below still protect conflict markers and
+            // invalid JSON.
+            return [];
         } catch (error) {
             return [
                 {
@@ -567,25 +563,6 @@ export class SimpleGit extends GitManager {
                 },
             ];
         }
-    }
-
-    private filterDiffCheckOutput(output: string): string {
-        const lines = output.trim().split(/\r?\n/);
-        const blockingLines: string[] = [];
-
-        for (let index = 0; index < lines.length; index++) {
-            const line = lines[index] ?? "";
-            if (/trailing whitespace\.\s*$/.test(line)) {
-                // Git emits the offending diff line immediately after this
-                // diagnostic. Ignore both lines so trailing whitespace never
-                // blocks a commit or sync.
-                if (lines[index + 1]?.startsWith("+")) index++;
-                continue;
-            }
-            blockingLines.push(line);
-        }
-
-        return blockingLines.join("\n").trim();
     }
 
     private hasConflictMarker(content: string): boolean {

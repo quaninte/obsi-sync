@@ -147,9 +147,9 @@ describe("SimpleGit.commitAll", () => {
         );
     });
 
-    it("commits files with trailing whitespace", async () => {
+    it("commits files with whitespace warnings", async () => {
         const repo = withCleanup(await createRepoWithOrigin());
-        repo.write("note.md", "base\nline with trailing whitespace  \n");
+        repo.write("note.md", "base\nline with trailing whitespace  \n\n");
         const plugin = createFakePlugin();
         const manager = createManager(repo.repoPath, repo.git, plugin);
 
@@ -159,7 +159,7 @@ describe("SimpleGit.commitAll", () => {
 
         expect(changes).toBe(1);
         expect(readFileSync(path.join(repo.repoPath, "note.md"), "utf8")).toBe(
-            "base\nline with trailing whitespace  \n"
+            "base\nline with trailing whitespace  \n\n"
         );
         expect(await repo.statusPorcelain()).toBe("");
     });
