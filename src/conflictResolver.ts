@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from "child_process";
+import { existsSync } from "fs";
 import * as fs from "fs/promises";
+import { homedir } from "os";
 import * as path from "path";
 import { Platform } from "obsidian";
 import type ObsiSync from "./main";
@@ -338,6 +340,36 @@ export class ConflictResolver {
                 return false;
             }
 
+            if (manager.hasPendingAutostashConflict()) {
+                try {
+                    await manager.completePendingAutostashConflict();
+                } catch (error) {
+                    this.plugin.displayError(
+                        `Git could not finish the automatic autostash conflict cleanup (operation ${operationId ?? "unknown"}): ${String(error)}`
+                    );
+                    this.plugin.diagnostics?.recordError(
+                        {
+                            event: "resolver.failed",
+                            operationId,
+                            attempt,
+                            reason: "git-continue",
+                        },
+                        error
+                    );
+                    return false;
+                }
+                const finalStatus = await manager.git.status();
+                const success = finalStatus.conflicted.length === 0;
+                this.plugin.diagnostics?.record({
+                    event: success ? "resolver.completed" : "resolver.failed",
+                    operationId,
+                    attempt,
+                    reason: success ? undefined : "git-conflict-remains",
+                    conflicted: finalStatus.conflicted,
+                });
+                return success;
+            }
+
             try {
                 await this.continueGitOperation(manager, settings.cli);
                 const finalStatus = await manager.git.status();
@@ -391,6 +423,7 @@ export class ConflictResolver {
             "You are resolving an existing Git merge or rebase conflict for an Obsidian vault.",
             `This is automatic pass ${attempt} of ${MAX_ATTEMPTS}.`,
             "Resolve the conflict semantically by editing only the listed files.",
+            "Use terminal shell commands only. Do not use any UI, browser, desktop app, MCP server, plugin, Computer Use, cua_repl, cmux, workspace interface, or interactive session.",
             "Do not reset, clean, stash, checkout, abort, commit, push, or edit .git.",
             "Do not modify any file outside this list. Preserve both sides when their content is compatible.",
             `Conflicted files:\n${files.map((file) => `- ${file}`).join("\n")}`,
@@ -409,6 +442,7 @@ export class ConflictResolver {
             `This is automatic pass ${attempt} of ${MAX_ATTEMPTS}.`,
             `The blocked operation is ${phase}.`,
             "Edit only the listed files and make the smallest safe repair that preserves their intended content.",
+            "Use terminal shell commands only. Do not use any UI, browser, desktop app, MCP server, plugin, Computer Use, cua_repl, cmux, workspace interface, or interactive session.",
             "Typical repairs include resolving conflict markers, restoring valid JSON syntax, or addressing other blocking Git integrity errors. Trailing whitespace is allowed and must be preserved.",
             "Do not reset, clean, stash, checkout, abort, commit, push, or edit .git.",
             "Do not create, delete, or modify any file outside the listed files.",
@@ -446,17 +480,18 @@ export class ConflictResolver {
         files: string[]
     ): Promise<string[]> {
         const unresolved: string[] = [];
+        const conflictMarkers = ["<".repeat(7), "=".repeat(7), ">".repeat(7)];
+        const conflictMarkerPattern = new RegExp(
+            `^(?:${conflictMarkers.join("|")})(?: .*)?$`,
+            "m"
+        );
         for (const file of files) {
             try {
                 const content = await fs.readFile(
                     path.join(repoPath, file),
                     "utf8"
                 );
-                if (
-                    content.includes("<<<<<<<") ||
-                    content.includes("=======") ||
-                    content.includes(">>>>>>>")
-                ) {
+                if (conflictMarkerPattern.test(content)) {
                     unresolved.push(file);
                 }
             } catch {
@@ -474,7 +509,7 @@ export class ConflictResolver {
         timeoutSeconds: number,
         operation: "conflict" | "integrity" = "conflict"
     ): Promise<ProcessResult> {
-        const executable = Platform.isWin ? `${cli}.cmd` : cli;
+        const executable = this.getCliExecutable(cli);
         const args =
             cli === "codex"
                 ? [
@@ -482,6 +517,12 @@ export class ConflictResolver {
                       "--model",
                       model,
                       "--dangerously-bypass-approvals-and-sandbox",
+                      // Automatic repairs must stay a headless terminal
+                      // subprocess. Do not load the user's Codex MCP/plugin
+                      // configuration, which can expose workspace/Computer
+                      // Use tools and make the CLI fall back to UI control.
+                      "--ignore-user-config",
+                      "--ephemeral",
                       "--cd",
                       cwd,
                       prompt,
@@ -491,14 +532,17 @@ export class ConflictResolver {
         return new Promise((resolve) => {
             let child: ChildProcess;
             try {
+                const environment = this.getCliEnvironment(operation);
+                if (cli === "codex" && !Platform.isWin && executable !== cli) {
+                    // Obsidian may inherit CODEX_CLI_PATH pointing at a
+                    // symlink in ~/.local/bin. Codex uses this value to find
+                    // its code-mode host, so keep it paired with the binary
+                    // we actually execute.
+                    environment.CODEX_CLI_PATH = executable;
+                }
                 child = spawn(executable, args, {
                     cwd,
-                    env: {
-                        ...process.env,
-                        ...(operation === "conflict"
-                            ? { OBSI_SYNC_CONFLICT_RESOLUTION: "1" }
-                            : { OBSI_SYNC_INTEGRITY_REPAIR: "1" }),
-                    },
+                    env: environment,
                     stdio: ["ignore", "pipe", "pipe"],
                     shell: false,
                 });
@@ -546,5 +590,66 @@ export class ConflictResolver {
                 resolve({ code: code ?? 1, stdout, stderr, timedOut });
             });
         });
+    }
+
+    private getCliExecutable(cli: ConflictResolutionCli): string {
+        if (Platform.isWin) return `${cli}.cmd`;
+        if (cli !== "codex") return cli;
+
+        // The ChatGPT desktop install ships the CLI and its code-mode host
+        // side by side. Calling a ~/.local/bin/codex symlink makes Codex look
+        // for the host beside the symlink, where it is usually absent.
+        const configuredPath = process.env.CODEX_CLI_PATH;
+        if (configuredPath && existsSync(configuredPath)) {
+            return configuredPath;
+        }
+        const bundledPath =
+            "/Applications/ChatGPT.app/Contents/Resources/codex";
+        if (existsSync(bundledPath)) return bundledPath;
+        return cli;
+    }
+
+    private getCliEnvironment(
+        operation: "conflict" | "integrity"
+    ): NodeJS.ProcessEnv {
+        const pathKey =
+            Object.keys(process.env).find(
+                (key) => key.toLowerCase() === "path"
+            ) ?? "PATH";
+        const currentPath = process.env[pathKey] ?? process.env.PATH ?? "";
+        const home = homedir();
+        const additionalPaths = Platform.isWin
+            ? [
+                  path.join(home, "AppData", "Roaming", "npm"),
+                  path.join(
+                      process.env.LOCALAPPDATA ??
+                          path.join(home, "AppData", "Local"),
+                      "Programs"
+                  ),
+              ]
+            : [
+                  path.join(home, ".local", "bin"),
+                  path.join(home, ".opencode", "bin"),
+                  path.join(home, "Library", "pnpm"),
+                  path.join(home, ".npm-global", "bin"),
+                  "/opt/homebrew/bin",
+                  "/usr/local/bin",
+                  "/Applications/ChatGPT.app/Contents/Resources",
+              ];
+        const pathEntries = [
+            ...currentPath.split(path.delimiter),
+            ...additionalPaths,
+        ].filter(
+            (entry, index, entries) =>
+                entry.length > 0 && entries.indexOf(entry) === index
+        );
+
+        return {
+            ...process.env,
+            [pathKey]: pathEntries.join(path.delimiter),
+            ...(operation === "conflict"
+                ? { OBSI_SYNC_CONFLICT_RESOLUTION: "1" }
+                : { OBSI_SYNC_INTEGRITY_REPAIR: "1" }),
+        };
     }
 }

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import simpleGit, {
     type SimpleGit as SimpleGitClient,
@@ -193,6 +193,70 @@ describe("SimpleGit.pull", () => {
         expect(plugin.app.workspace.trigger).toHaveBeenCalledWith(
             "obsi-sync:head-change"
         );
+    });
+
+    it("preserves local Obsidian changes when a remote pull updates the same file", async () => {
+        const repo = withCleanup(await createRepoWithOrigin());
+        mkdirSync(path.join(repo.repoPath, ".obsidian"));
+        repo.write(
+            ".obsidian/workspace.json",
+            '{\n  "one": "base",\n  "two": "base",\n  "three": "base",\n  "four": "base",\n  "five": "base",\n  "six": "base",\n  "seven": "base",\n  "eight": "base",\n  "nine": "base",\n  "ten": "base"\n}\n'
+        );
+        await repo.git.add(".obsidian/workspace.json");
+        await repo.git.commit("add workspace state");
+        await repo.git.push(["--quiet"]);
+
+        repo.write(
+            ".obsidian/workspace.json",
+            '{\n  "one": "local",\n  "two": "base",\n  "three": "base",\n  "four": "base",\n  "five": "base",\n  "six": "base",\n  "seven": "base",\n  "eight": "base",\n  "nine": "base",\n  "ten": "base"\n}\n'
+        );
+
+        const remoteWorktreePath = path.join(repo.dir, "remote-worktree");
+        await simpleGit(repo.dir).raw([
+            "clone",
+            repo.remotePath,
+            remoteWorktreePath,
+        ]);
+        const remoteGit = simpleGit({
+            baseDir: remoteWorktreePath,
+            config: ["core.quotepath=off"],
+        });
+        await remoteGit.addConfig("user.email", "test@example.com");
+        await remoteGit.addConfig("user.name", "Test User");
+        writeFileSync(
+            path.join(remoteWorktreePath, ".obsidian/workspace.json"),
+            '{\n  "one": "base",\n  "two": "base",\n  "three": "base",\n  "four": "base",\n  "five": "base",\n  "six": "base",\n  "seven": "base",\n  "eight": "base",\n  "nine": "base",\n  "ten": "remote"\n}\n'
+        );
+        await remoteGit.add(".obsidian/workspace.json");
+        await remoteGit.commit("remote workspace update");
+        await remoteGit.push(["--quiet"]);
+
+        const plugin = createFakePlugin();
+        plugin.settings.syncMethod = "merge";
+        plugin.settings.mergeStrategy = "none";
+        const manager = createManager(repo.repoPath, repo.git, plugin);
+
+        const changes = await manager.pull();
+
+        expect(changes).toEqual([
+            {
+                path: ".obsidian/workspace.json",
+                workingDir: "P",
+                vaultPath: ".obsidian/workspace.json",
+            },
+        ]);
+        expect(await repo.show("HEAD:.obsidian/workspace.json")).toBe(
+            '{\n  "one": "base",\n  "two": "base",\n  "three": "base",\n  "four": "base",\n  "five": "base",\n  "six": "base",\n  "seven": "base",\n  "eight": "base",\n  "nine": "base",\n  "ten": "remote"\n}'
+        );
+        expect(
+            readFileSync(
+                path.join(repo.repoPath, ".obsidian/workspace.json"),
+                "utf8"
+            )
+        ).toBe(
+            '{\n  "one": "local",\n  "two": "base",\n  "three": "base",\n  "four": "base",\n  "five": "base",\n  "six": "base",\n  "seven": "base",\n  "eight": "base",\n  "nine": "base",\n  "ten": "remote"\n}\n'
+        );
+        expect(await repo.statusPorcelain()).toBe("M .obsidian/workspace.json");
     });
 
     it("returns an empty change list when the branch is already up to date", async () => {

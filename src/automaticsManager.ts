@@ -209,7 +209,7 @@ export default class AutomaticsManager {
 
     private doAutoPull(): void {
         this.plugin.promiseQueue.addTask(
-            () => this.plugin.pullChangesFromRemote(),
+            () => this.plugin.autoPullAndSync(),
             () => {
                 this.saveLastAuto(new Date(), "pull");
                 this.startAutoPull();

@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { homedir, tmpdir } from "os";
 import path from "path";
 import { Platform } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,17 +159,23 @@ describe("ConflictResolver", () => {
         await expect(resolver.resolve(["note.md"])).resolves.toBe(true);
 
         expect(spawnMock).toHaveBeenCalledWith(
-            "codex",
+            expect.stringMatching(/(?:^|\/)codex$/),
             expect.arrayContaining([
                 "exec",
                 "--model",
                 "test-model",
                 "--dangerously-bypass-approvals-and-sandbox",
+                "--ignore-user-config",
+                "--ephemeral",
                 "--cd",
                 repoPath,
             ]),
             expect.objectContaining({ cwd: repoPath, shell: false })
         );
+        const args = (spawnMock.mock.calls[0] as [string, string[]])[1];
+        const prompt = args[args.length - 1];
+        expect(prompt).toContain("Use terminal shell commands only");
+        expect(prompt).toContain("Do not use any UI");
         expect(add).toHaveBeenCalledWith(["note.md"]);
         expect(raw).toHaveBeenCalledWith([
             "-c",
@@ -243,10 +249,12 @@ describe("ConflictResolver", () => {
         ).resolves.toBe(true);
 
         expect(spawnMock).toHaveBeenCalledWith(
-            "codex",
+            expect.stringMatching(/(?:^|\/)codex$/),
             expect.arrayContaining([
                 "exec",
                 "--dangerously-bypass-approvals-and-sandbox",
+                "--ignore-user-config",
+                "--ephemeral",
                 "--cd",
                 repoPath,
             ]),
@@ -258,9 +266,37 @@ describe("ConflictResolver", () => {
             { env: NodeJS.ProcessEnv },
         ];
         expect(spawnCall[2].env.OBSI_SYNC_INTEGRITY_REPAIR).toBe("1");
+        expect(spawnCall[2].env.CODEX_CLI_PATH).toMatch(/(?:^|\/)codex$/);
+        expect(spawnCall[2].env.PATH).toContain(
+            path.join(homedir(), ".local", "bin")
+        );
         expect(add).toHaveBeenCalledWith(["note.md"]);
         expect(raw).not.toHaveBeenCalledWith(
             expect.arrayContaining(["commit"])
+        );
+    });
+
+    it("cleans up an autostash conflict without continuing a completed merge", async () => {
+        spawnMock.mockImplementation(() => childProcess());
+        const { resolver, manager, raw } = makeResolver(
+            [
+                status("note.md"),
+                status("note.md"),
+                status("note.md", []),
+                status("note.md", []),
+            ],
+            repoPath
+        );
+        vi.spyOn(manager, "hasPendingAutostashConflict").mockReturnValue(true);
+        const complete = vi
+            .spyOn(manager, "completePendingAutostashConflict")
+            .mockResolvedValue(undefined);
+
+        await expect(resolver.resolve(["note.md"])).resolves.toBe(true);
+
+        expect(complete).toHaveBeenCalledOnce();
+        expect(raw).not.toHaveBeenCalledWith(
+            expect.arrayContaining(["--continue"])
         );
     });
 

@@ -33,6 +33,8 @@ import { impossibleBranch, spawnAsync, splitRemoteBranch } from "../utils";
 import { GitManager } from "./gitManager";
 
 export class SimpleGit extends GitManager {
+    private pendingAutostash?: string;
+
     git!: simple.SimpleGit;
     absoluteRepoPath!: string;
     watchAbortController: AbortController | undefined;
@@ -566,7 +568,10 @@ export class SimpleGit extends GitManager {
     }
 
     private hasConflictMarker(content: string): boolean {
-        return /^(<<<<<<<|=======|>>>>>>>)(?:\s.*)?$/m.test(content);
+        const markers = ["<".repeat(7), "=".repeat(7), ">".repeat(7)];
+        return new RegExp(`^(?:${markers.join("|")})(?:\\s.*)?$`, "m").test(
+            content
+        );
     }
 
     async submoduleAwareHeadRevisonInContainingDirectory(
@@ -822,6 +827,22 @@ export class SimpleGit extends GitManager {
         return this.discard(dir ?? ".");
     }
 
+    hasPendingAutostashConflict(): boolean {
+        return this.pendingAutostash !== undefined;
+    }
+
+    async completePendingAutostashConflict(): Promise<void> {
+        const pendingAutostash = this.pendingAutostash;
+        if (!pendingAutostash) return;
+
+        const stashes = await this.getStashHashes();
+        const stashIndex = stashes.indexOf(pendingAutostash);
+        if (stashIndex >= 0) {
+            await this.git.raw(["stash", "drop", `stash@{${stashIndex}}`]);
+        }
+        this.pendingAutostash = undefined;
+    }
+
     async pull(): Promise<FileStatusResult[] | undefined> {
         return this.withGitOperation(GitOperation.pull, async () => {
             try {
@@ -865,7 +886,16 @@ export class SimpleGit extends GitManager {
                         this.plugin.settings.syncMethod === "rebase"
                     ) {
                         try {
-                            const args = [branchInfo.tracking!];
+                            const stashesBeforePull =
+                                await this.getStashHashes();
+                            // Obsidian routinely edits tracked workspace files
+                            // while it is open. Let Git temporarily move those
+                            // edits out of the way so a remote update touching
+                            // the same files does not fail before the merge or
+                            // rebase can start. Git reapplies the stash after
+                            // the operation and reports a real content conflict
+                            // if the two edits cannot be combined.
+                            const args = ["--autostash", branchInfo.tracking!];
 
                             if (this.plugin.settings.mergeStrategy !== "none") {
                                 args.push(
@@ -879,6 +909,24 @@ export class SimpleGit extends GitManager {
                                     break;
                                 case "rebase":
                                     await this.git.rebase(args);
+                            }
+
+                            const statusAfterSync = await this.status();
+                            if (statusAfterSync.conflicted.length > 0) {
+                                const newStash = (
+                                    await this.getStashHashes()
+                                ).find(
+                                    (stash) =>
+                                        !stashesBeforePull.includes(stash)
+                                );
+                                if (newStash) {
+                                    // `--autostash` leaves its stash in place
+                                    // when reapplying local changes conflicts.
+                                    // Keep its hash until the conflict is
+                                    // resolved, then drop only that generated
+                                    // stash rather than touching user stashes.
+                                    this.pendingAutostash = newStash;
+                                }
                             }
                         } catch (err) {
                             this.plugin.log(
@@ -929,6 +977,18 @@ export class SimpleGit extends GitManager {
                 this.convertErrors(e);
             }
         });
+    }
+
+    private async getStashHashes(): Promise<string[]> {
+        try {
+            const output = await this.git.raw(["stash", "list", "--format=%H"]);
+            return output
+                .split(/\r?\n/)
+                .map((stash) => stash.trim())
+                .filter((stash) => stash.length > 0);
+        } catch {
+            return [];
+        }
     }
 
     async push(): Promise<number | undefined | null> {

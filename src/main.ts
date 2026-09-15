@@ -788,6 +788,28 @@ export default class ObsidianGit extends Plugin {
         this.app.workspace.trigger("obsi-sync:refresh");
     }
 
+    /**
+     * Pulls, automatically resolves conflicts, then commits and pushes the
+     * resulting state. This is used by the automatic pull routine so a
+     * successful repair never leaves the vault half-synced.
+     */
+    async autoPullAndSync(): Promise<void> {
+        if (!(await this.isAllInitialized())) return;
+
+        const filesUpdated = await this.pull();
+        if (filesUpdated === false) return;
+
+        if (!(await this.commit({ fromAuto: true }))) return;
+
+        if (
+            !this.settings.disablePush &&
+            (await this.remotesAreSet()) &&
+            (await this.gitManager.canPush())
+        ) {
+            await this.push();
+        }
+    }
+
     async commitAndSync({
         fromAutoBackup,
         requestCustomMessage = false,
@@ -1634,6 +1656,12 @@ export default class ObsidianGit extends Plugin {
         this.localStorage.setConflict(true);
         let lines: string[] | undefined;
         if (conflicted !== undefined) {
+            // Keep Git marker examples out of the bundled plugin text. The
+            // integrity scanner must distinguish documentation from actual
+            // unresolved markers in the worktree.
+            const conflictStart = "<".repeat(7);
+            const conflictSeparator = "=".repeat(7);
+            const conflictEnd = ">".repeat(7);
             lines = [
                 "# Conflicts",
                 "Please resolve them and commit them using the commands `Obsi Sync: Commit all changes` followed by `Obsi Sync: Push`",
@@ -1657,11 +1685,11 @@ export default class ObsidianGit extends Plugin {
 I strongly recommend to use "Source mode" for viewing the conflicted files. For simple conflicts, in each file listed above replace every occurrence of the following text blocks with the desired text.
 
 \`\`\`diff
-<<<<<<< HEAD
+${conflictStart} HEAD
     File changes in local repository
-=======
+${conflictSeparator}
     File changes in remote repository
->>>>>>> origin/main
+${conflictEnd} origin/main
 \`\`\``,
             ];
         }
